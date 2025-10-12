@@ -88,7 +88,7 @@ GraphQL Analyzer includes advanced security testing for:
 
 ## ⚙️ Requirements
 
-- **Caido** v0.51.0 or higher
+- **Caido** v0.51.2 or higher
 
 
 ## 🤝 Contributing
