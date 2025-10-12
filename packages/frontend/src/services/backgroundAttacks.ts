@@ -1,4 +1,4 @@
-import type { FrontendSDK } from "../plugins/sdk";
+import type { FrontendSDK } from "../types";
 
 /**
  * Background Attack Service for managing attacks that run even when user navigates away
@@ -84,19 +84,30 @@ export class BackgroundAttackService {
    * Private polling logic
    */
   private startPolling(sessionId: string): void {
+    let errorCount = 0;
+    const maxErrors = 5;
+    
     this.pollInterval = window.setInterval(async () => {
       try {
         const statusResult = await this.sdk.backend.getAttackStatus(sessionId);
         
         if (statusResult.kind === "Error") {
-          // Session not found or error - stop polling
-          this.stopBackgroundAttack();
+          errorCount++;
+          
+          if (errorCount >= maxErrors) {
+            this.stopBackgroundAttack();
+            this.sdk.window.showToast(
+              `Attack monitoring stopped: ${statusResult.error}`, 
+              { variant: "error" }
+            );
+          }
           return;
         }
 
+        errorCount = 0;
+        
         const status = statusResult.value;
         
-        // Dispatch event for components to listen to
         window.dispatchEvent(new CustomEvent('graphql-analyzer-attack-progress', {
           detail: {
             sessionId,
@@ -106,7 +117,6 @@ export class BackgroundAttackService {
           }
         }));
 
-        // Check if completed
         if (status.isComplete) {
           this.stopBackgroundAttack();
           
@@ -115,13 +125,11 @@ export class BackgroundAttackService {
             sum + r.findings.filter((f: any) => f.severity === 'critical' || f.severity === 'high').length, 0
           );
           
-          // Show completion toast - this will appear even on other tabs
           this.sdk.window.showToast(
             `GraphQL attacks completed! ${totalFindings} findings (${criticalFindings} critical/high)`, 
-            { variant: criticalFindings > 0 ? "warn" : "success" }
+            { variant: criticalFindings > 0 ? "warning" : "success" }
           );
 
-          // Dispatch completion event
           window.dispatchEvent(new CustomEvent('graphql-analyzer-attack-complete', {
             detail: {
               sessionId,
@@ -132,10 +140,17 @@ export class BackgroundAttackService {
           }));
         }
       } catch (error) {
-        // Network error or other issue - continue polling for now
-        // Silently continue polling to avoid console noise
+        errorCount++;
+        
+        if (errorCount >= maxErrors) {
+          this.stopBackgroundAttack();
+          this.sdk.window.showToast(
+            `Attack monitoring stopped due to repeated errors`, 
+            { variant: "error" }
+          );
+        }
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000);
   }
 
   /**

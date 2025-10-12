@@ -1,7 +1,7 @@
 import type { DefineAPI, SDK } from "caido:plugin";
 import { GraphQLService } from "./services/graphql";
 import { GraphQLAttackService } from "./services/attacks";
-import type { AttackConfig } from "./types";
+import type { AttackConfig, Result } from "./types";
 
 // Re-export types
 export type {
@@ -23,9 +23,9 @@ export type {
 } from "./types";
 
 // Test GraphQL endpoint using the service
-const testGraphQLEndpoint = async (sdk: SDK, url: string) => {
+const testGraphQLEndpoint = async (sdk: SDK, url: string, customHeaders?: Record<string, string>) => {
   const graphqlService = new GraphQLService(sdk);
-  return await graphqlService.testEndpoint(url);
+  return await graphqlService.testEndpoint(url, customHeaders);
 };
 
 // Generate GraphQL query

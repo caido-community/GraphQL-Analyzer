@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import Card from "primevue/card";
-
 import InputText from "primevue/inputtext";
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, computed } from "vue";
 
 import { useSDK } from "../plugins/sdk";
 import type { Result } from "backend";
@@ -17,6 +16,32 @@ const props = defineProps<{
 const scanUrl = ref("");
 const isScanning = ref(false);
 const recentSessions = ref<any[]>([]);
+
+// Custom headers for scanning
+const customHeaders = ref<Array<{ name: string; value: string }>>([]);
+
+// Add custom header
+const addCustomHeader = () => {
+  if (customHeaders.value.length < 20) {
+    customHeaders.value.push({ name: "", value: "" });
+  }
+};
+
+// Remove custom header
+const removeCustomHeader = (index: number) => {
+  customHeaders.value.splice(index, 1);
+};
+
+// Build headers object from custom headers
+const parsedHeaders = computed(() => {
+  const headers: Record<string, string> = {};
+  customHeaders.value.forEach(header => {
+    if (header.name.trim() && header.value.trim()) {
+      headers[header.name.trim()] = header.value.trim();
+    }
+  });
+  return headers;
+});
 
 const handleScan = async () => {
   if (!scanUrl.value.trim()) {
@@ -39,76 +64,112 @@ const handleScan = async () => {
   isScanning.value = true;
 
   try {
+    // Ensure we only send valid headers (no null/undefined values)
+    const validHeaders: Record<string, string> = {};
+    Object.entries(parsedHeaders.value).forEach(([key, value]) => {
+      if (key && value && typeof value === 'string') {
+        validHeaders[key] = value;
+      }
+    });
+    
+    // Always pass an object, never undefined (undefined becomes null in RPC serialization)
+    const headersToSend = Object.keys(validHeaders).length > 0 ? validHeaders : {};
+    
     const result: Result<{ supportsIntrospection: boolean; schema?: any }> = 
-      await sdk.backend.testGraphQLEndpoint(scanUrl.value.trim());
+      await sdk.backend.testGraphQLEndpoint(scanUrl.value.trim(), headersToSend);
 
     if (result.kind === "Error") {
       sdk.window.showToast(`Scan failed: ${result.error}`, { variant: "error" });
     } else {
-      // Store the scan result for Explorer to pick up
-      const sessionData = {
-        id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-        title: getDomainName(scanUrl.value.trim()),
-        url: scanUrl.value.trim(),
-        schema: result.value.schema,
-        supportsIntrospection: result.value.supportsIntrospection,
-        createdAt: new Date(),
-        status: result.value.supportsIntrospection ? "success" : "warning"
-      };
-
-      // Store session in Explorer storage
-      const currentStorage = sdk.storage.get() as any || {};
+      const currentStorage: any = sdk.storage.get() || {};
       
-      // Initialize Explorer sessions if not present
-      if (!currentStorage.explorerSessions || !Array.isArray(currentStorage.explorerSessions)) {
-        currentStorage.explorerSessions = [];
-      }
-      
-      // Add to Explorer sessions
-      currentStorage.explorerSessions.push(sessionData);
-      currentStorage.selectedExplorerSessionId = sessionData.id;
-      
-      // Add to Dashboard activities
+      // Initialize Dashboard activities if not present
       if (!currentStorage.dashboardActivities || !Array.isArray(currentStorage.dashboardActivities)) {
         currentStorage.dashboardActivities = [];
       }
-      
-      const activityData = {
-        id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-        title: `Schema scan: ${sessionData.title}`,
-        url: sessionData.url,
-        description: result.value.supportsIntrospection ? "Successfully scanned GraphQL schema" : "Endpoint found but no introspection support",
-        createdAt: sessionData.createdAt,
-        status: sessionData.status,
-        type: "scan"
-      };
-      
-      currentStorage.dashboardActivities.unshift(activityData);
-      
-      // Keep only recent 20 activities
-      if (currentStorage.dashboardActivities.length > 20) {
-        currentStorage.dashboardActivities = currentStorage.dashboardActivities.slice(0, 20);
-      }
-      
-      await sdk.storage.set(currentStorage);
-      await loadRecentSessions();
 
-      if (!result.value.supportsIntrospection) {
-        sdk.window.showToast("Endpoint does not support introspection", { variant: "warning" });
-      } else {
-        sdk.window.showToast("Schema scanned successfully!", { variant: "success" });
-      }
+      if (result.value.supportsIntrospection && result.value.schema) {
+        // Only create Explorer session if introspection is successful
+        const sessionData = {
+          id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+          title: getDomainName(scanUrl.value.trim()),
+          url: scanUrl.value.trim(),
+          schema: result.value.schema,
+          supportsIntrospection: true,
+          createdAt: new Date(),
+          status: "success"
+        };
 
-      scanUrl.value = "";
-
-      setTimeout(() => {
-        if (props.navigateTo) {
-          props.navigateTo("Explorer");
+        // Initialize Explorer sessions if not present
+        if (!currentStorage.explorerSessions || !Array.isArray(currentStorage.explorerSessions)) {
+          currentStorage.explorerSessions = [];
         }
-      }, 800);
+        
+        // Add to Explorer sessions
+        currentStorage.explorerSessions.push(sessionData);
+        currentStorage.selectedExplorerSessionId = sessionData.id;
+        
+        // Add success activity to Dashboard
+        const activityData = {
+          id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+          title: `Schema scan: ${sessionData.title}`,
+          url: sessionData.url,
+          description: "Successfully scanned GraphQL schema",
+          createdAt: sessionData.createdAt,
+          status: "success",
+          type: "scan"
+        };
+        
+        currentStorage.dashboardActivities.unshift(activityData);
+        
+        // Keep only recent 20 activities
+        if (currentStorage.dashboardActivities.length > 20) {
+          currentStorage.dashboardActivities = currentStorage.dashboardActivities.slice(0, 20);
+        }
+        
+        // @ts-ignore - Storage type is overly strict
+        await sdk.storage.set(currentStorage);
+        await loadRecentSessions();
+
+        sdk.window.showToast("Schema scanned successfully!", { variant: "success" });
+        scanUrl.value = "";
+        customHeaders.value = [];
+
+        setTimeout(() => {
+          if (props.navigateTo) {
+            props.navigateTo("Explorer");
+          }
+        }, 800);
+      } else { 
+        // Introspection not supported - add warning activity but don't create Explorer session
+        const activityData: any = {
+          id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+          title: `Scan attempted: ${getDomainName(scanUrl.value.trim())}`,
+          url: scanUrl.value.trim(),
+          description: "GraphQL endpoint found but introspection is disabled",
+          createdAt: new Date(),
+          status: "warning",
+          type: "scan"
+        };
+        
+        currentStorage.dashboardActivities.unshift(activityData);
+        
+        // Keep only recent 20 activities
+        if (currentStorage.dashboardActivities.length > 20) {
+          currentStorage.dashboardActivities = currentStorage.dashboardActivities.slice(0, 20);
+        }
+        
+        // @ts-ignore - Storage type is overly strict
+        await sdk.storage.set(currentStorage);
+        await loadRecentSessions();
+
+        sdk.window.showToast("GraphQL endpoint detected, but introspection is disabled. Cannot explore schema.", { variant: "warning" });
+        scanUrl.value = "";
+      }
     }
   } catch (err) {
-    sdk.window.showToast("Scan failed. Please check the URL and try again.", { variant: "error" });
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    sdk.window.showToast(`Scan failed: ${errorMsg}. Please check the URL and try again.`, { variant: "error" });
   } finally {
     isScanning.value = false;
   }
@@ -171,37 +232,12 @@ const formatDate = (date: Date): string => {
   return date.toLocaleDateString();
 };
 
-const deleteAttackActivity = async (sessionId: string) => {
-  try {
-    const stored = sdk.storage.get() as any || {};
-    if (stored.dashboardActivities) {
-      // Find the attack activity to get the attackSessionId
-      const attackActivity = stored.dashboardActivities.find((s: any) => s.id === sessionId);
-      
-      // Remove the attack activity from dashboard activities
-      stored.dashboardActivities = stored.dashboardActivities.filter((s: any) => s.id !== sessionId);
-      
-      // Find and remove the corresponding attack session if it exists
-      if (stored.attackSessions && attackActivity?.attackSessionId) {
-        stored.attackSessions = stored.attackSessions.filter((s: any) => s.id !== attackActivity.attackSessionId);
-      }
-      
-      await sdk.storage.set(stored);
-      
-      // Update the UI
-      loadRecentSessions();
-      
-      sdk.window.showToast("Attack activity deleted", { variant: "success" });
-    }
-  } catch (error) {
-    sdk.window.showToast("Failed to delete attack activity", { variant: "error" });
-  }
-};
-
 const deleteAllData = async () => {
   try {
     // Clear all storage data
-    await sdk.storage.set({});
+    const emptyStorage: any = {};
+    // @ts-ignore - Storage type is overly strict
+    await sdk.storage.set(emptyStorage);
     
     // Clear UI state
     recentSessions.value = [];
@@ -214,8 +250,21 @@ const deleteAllData = async () => {
 
 const handleContextScan = (event: CustomEvent) => {
   const url = event.detail.url;
+  const headers = event.detail.headers;
+  
   if (url) {
     scanUrl.value = url;
+    
+    // Populate custom headers from HTTP History request
+    if (headers && Object.keys(headers).length > 0) {
+      customHeaders.value = [];
+      Object.entries(headers).forEach(([key, value]) => {
+        if (key.toLowerCase() !== 'content-length' && key && value) {
+          customHeaders.value.push({ name: key, value: value as string });
+        }
+      });
+    }
+    
     handleScan();
   }
 };
@@ -225,10 +274,32 @@ onMounted(() => {
   loadRecentSessions();
   
   const pendingUrl = localStorage.getItem('graphql-analyzer-context-scan-url');
-  if (pendingUrl) {
-    localStorage.removeItem('graphql-analyzer-context-scan-url');
+  const pendingHeaders = localStorage.getItem('graphql-analyzer-context-scan-headers');
+  const scanProcessed = sessionStorage.getItem('graphql-analyzer-scan-processed');
+  
+  if (pendingUrl && !scanProcessed) {
     scanUrl.value = pendingUrl;
-    handleScan();
+    
+    if (pendingHeaders) {
+      try {
+        const headers = JSON.parse(pendingHeaders);
+        if (Object.keys(headers).length > 0) {
+          customHeaders.value = [];
+          Object.entries(headers).forEach(([key, value]) => {
+            if (key.toLowerCase() !== 'content-length' && key && value) {
+              customHeaders.value.push({ name: key, value: value as string });
+            }
+          });
+        }
+      } catch {
+      }
+    }
+    
+    localStorage.removeItem('graphql-analyzer-context-scan-url');
+    localStorage.removeItem('graphql-analyzer-context-scan-headers');
+    sessionStorage.setItem('graphql-analyzer-scan-processed', 'true');
+    
+    setTimeout(() => handleScan(), 100);
   }
 });
 
@@ -270,11 +341,22 @@ export default {
         >
           <template #content>
             <div class="p-6 h-full flex flex-col">
-              <div class="mb-6">
-                <h3 class="text-xl font-bold mb-3">Scan GraphQL Endpoint</h3>
-                <p class="text-base text-surface-300">
-                  Enter a GraphQL endpoint URL to perform introspection and discover the schema structure.
-                </p>
+              <div class="mb-6 flex items-start justify-between">
+                <div class="flex-1">
+                  <h3 class="text-xl font-bold mb-3">Scan GraphQL Endpoint</h3>
+                  <p class="text-base text-surface-300">
+                    Enter a GraphQL endpoint URL to perform introspection and discover the schema structure.
+                  </p>
+                </div>
+                <Button
+                  icon="fas fa-eraser"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="() => { scanUrl = ''; customHeaders = []; }"
+                  v-tooltip="'Clear all fields'"
+                  class="ml-2"
+                />
               </div>
 
               <div class="flex-1 flex flex-col justify-center space-y-4">
@@ -307,23 +389,77 @@ export default {
           </template>
         </Card>
 
-        <!-- HTTP Requests Card - Bottom Left (50% width, 50% height) -->
+        <!-- Custom Headers Card - Bottom Left (50% width, 50% height) -->
         <Card 
-          class="flex-1"
+          class="flex-1 min-h-0"
           :pt="{ body: { class: 'h-full p-0' }, content: { class: 'h-full flex flex-col' } }"
         >
           <template #content>
-            <div class="p-4 h-full flex flex-col items-center justify-center text-center">
-              <div class="flex items-center justify-center w-16 h-16">
-                <i class="fas fa-exchange-alt text-white text-2xl"></i>
+            <div class="p-4 h-full flex flex-col" style="max-height: 100%;">
+              <div class="mb-3 flex-shrink-0">
+                <div class="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 class="text-lg font-semibold">Custom Headers</h3>
+                    <p class="text-sm text-surface-400">Add custom headers for authenticated scanning</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-surface-500 px-2 py-1 bg-surface-700 rounded">
+                      <i class="fas fa-key mr-1"></i>
+                      {{ Object.keys(parsedHeaders).length }} headers
+                    </span>
+                    <Button
+                      :disabled="customHeaders.length >= 20"
+                      icon="fas fa-plus"
+                      size="small"
+                      severity="secondary"
+                      @click="addCustomHeader"
+                      v-tooltip="customHeaders.length >= 20 ? 'Maximum 20 headers allowed' : 'Add custom header'"
+                    />
+                  </div>
+                </div>
               </div>
-              <div class="mb-4">
-                <h3 class="text-lg font-semibold mb-2">Scan From HTTP History</h3>
-                <p class="text-sm text-surface-400 max-w-sm">
-                  Right-click any GraphQL request in HTTP History and select "Send to GraphQL Analyzer" to scan it directly.
-                </p>
+              
+              <div class="flex-1 overflow-y-auto overflow-x-hidden pr-2" style="min-height: 0;">
+                <div v-if="customHeaders.length === 0" class="text-center text-surface-500 py-8">
+                  <i class="fas fa-plus-circle text-3xl mb-3"></i>
+                  <div class="text-sm">No custom headers added</div>
+                  <div class="text-xs mt-1">Click + to add Authorization, Cookie, or other headers</div>
+                </div>
+                
+                <div v-else class="space-y-2 pb-2">
+                  <div 
+                    v-for="(header, index) in customHeaders" 
+                    :key="index"
+                    class="flex items-center gap-2"
+                  >
+                    <InputText
+                      v-model="header.name"
+                      placeholder="Header name (e.g. Authorization)"
+                      class="flex-1"
+                      size="small"
+                    />
+                    <InputText
+                      v-model="header.value"
+                      placeholder="Header value"
+                      class="flex-1"
+                      size="small"
+                    />
+                    <Button
+                      icon="fas fa-times"
+                      size="small"
+                      text
+                      severity="danger"
+                      @click="removeCustomHeader(index)"
+                      v-tooltip="'Remove header'"
+                    />
+                  </div>
+                </div>
               </div>
-
+              
+              <div class="mt-3 text-xs text-surface-500 flex-shrink-0 border-t border-surface-600 pt-3">
+                <i class="fas fa-info-circle mr-1"></i>
+                Headers are automatically included when scanning from HTTP History
+              </div>
             </div>
           </template>
         </Card>

@@ -34,31 +34,41 @@ const handlePageChange = (page: PageType) => {
   currentPage.value = page;
 };
 
-// Handle navigation events from context menus
-onMounted(() => {
-  // Check for pending navigation on mount
-  const pendingNav = localStorage.getItem('graphql-analyzer-navigate-to');
-  if (pendingNav && (pendingNav as PageType)) {
-    setTimeout(() => {
-      currentPage.value = pendingNav as PageType;
-      localStorage.removeItem('graphql-analyzer-navigate-to');
-    }, 100);
+const handleNavigationEvent = (event: CustomEvent) => {
+  const targetPage = event.detail?.page;
+  if (targetPage) {
+    currentPage.value = targetPage as PageType;
   }
+};
 
-  // Listen for navigation events
-  const handleNavigationEvent = (event: CustomEvent) => {
-    const { page } = event.detail;
-    if (page && (page as PageType)) {
-      currentPage.value = page as PageType;
+// Handle navigation events from context menus
+const checkPendingNavigation = () => {
+  const pendingNav = localStorage.getItem('graphql-analyzer-navigate-to');
+  const navTimestamp = localStorage.getItem('graphql-analyzer-navigate-timestamp');
+  
+  if (pendingNav && navTimestamp) {
+    const now = Date.now();
+    const shouldNavigate = (now - parseInt(navTimestamp)) < 2000;
+    
+    if (shouldNavigate) {
+      currentPage.value = pendingNav as PageType;
     }
-  };
+    
+    localStorage.removeItem('graphql-analyzer-navigate-to');
+    localStorage.removeItem('graphql-analyzer-navigate-timestamp');
+  }
+};
 
+onMounted(() => {
+  checkPendingNavigation();
+  
   window.addEventListener('graphql-analyzer-navigate', handleNavigationEvent as any);
+  window.addEventListener('focus', checkPendingNavigation);
+});
 
-  // Cleanup
-  onUnmounted(() => {
-    window.removeEventListener('graphql-analyzer-navigate', handleNavigationEvent as any);
-  });
+onUnmounted(() => {
+  window.removeEventListener('graphql-analyzer-navigate', handleNavigationEvent as any);
+  window.removeEventListener('focus', checkPendingNavigation);
 });
 </script>
 

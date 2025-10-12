@@ -88,8 +88,15 @@ const formatGraphQLQuery = (query: string): string => {
   if (!query) return '';
   
   try {
+    // FIRST: Strip comment lines (lines starting with #) BEFORE formatting
+    const strippedQuery = query
+      .split('\n')
+      .filter(line => !line.trim().startsWith('#'))
+      .join('\n')
+      .trim();
+    
     // More sophisticated GraphQL formatting
-    let formatted = query
+    let formatted = strippedQuery
       .replace(/\s+/g, ' ')
       .replace(/\{\s*/g, ' {\n  ')
       .replace(/\s*\}/g, '\n}')
@@ -152,17 +159,29 @@ const validateQuery = (query: string): string[] => {
     return errors;
   }
   
-  // Basic syntax validation
-  const openBraces = (query.match(/\{/g) || []).length;
-  const closeBraces = (query.match(/\}/g) || []).length;
+  // Strip comment lines (lines starting with #)
+  const strippedQuery = query
+    .split('\n')
+    .filter(line => !line.trim().startsWith('#'))
+    .join('\n')
+    .trim();
+  
+  // If nothing left after stripping comments, no validation needed
+  if (!strippedQuery) {
+    return errors;
+  }
+  
+  // Basic syntax validation on stripped query
+  const openBraces = (strippedQuery.match(/\{/g) || []).length;
+  const closeBraces = (strippedQuery.match(/\}/g) || []).length;
   
   if (openBraces !== closeBraces) {
     errors.push('Mismatched braces in query');
   }
   
-  // Check for valid operation types
-  const hasValidOperation = /^\s*(query|mutation|subscription)\s+/i.test(query.trim()) || 
-                           /^\s*\{/.test(query.trim());
+  // Check for valid operation types on stripped query
+  const hasValidOperation = /^\s*(query|mutation|subscription)\s+/i.test(strippedQuery) || 
+                           /^\s*\{/.test(strippedQuery);
   
   if (!hasValidOperation) {
     errors.push('Query must start with query, mutation, subscription, or {');
@@ -253,32 +272,71 @@ const saveToScanner = () => {
   const portPart = (props.request.port === 80 || props.request.port === 443) ? '' : `:${props.request.port}`;
   let graphqlUrl = `${protocol}://${props.request.host}${portPart}${props.request.path}`;
   
-  // If path doesn't already contain 'graphql', try common GraphQL endpoints
   if (!graphqlUrl.toLowerCase().includes('graphql')) {
     graphqlUrl = `${protocol}://${props.request.host}${portPart}/graphql`;
   }
   
+  const headers: Record<string, string> = {};
+  if (parsedHttp.value?.headers) {
+    Object.entries(parsedHttp.value.headers).forEach(([key, value]) => {
+      if (key.toLowerCase() !== 'content-length' && key && value) {
+        headers[key] = typeof value === 'string' ? value : String(value);
+      }
+    });
+  }
 
   props.sdk.window.showToast(`Scanning GraphQL endpoint: ${graphqlUrl}`, { variant: 'info' });
   
-
   window.location.hash = '/graphql-analyzer';
   
-  // Store the URL to scan for the Dashboard to pick up
+  localStorage.setItem('graphql-analyzer-context-scan-timestamp', Date.now().toString());
   localStorage.setItem('graphql-analyzer-context-scan-url', graphqlUrl);
+  localStorage.setItem('graphql-analyzer-context-scan-headers', JSON.stringify(headers));
   
-  // Trigger a custom event that Dashboard can listen for
   window.dispatchEvent(new CustomEvent('graphql-analyzer-context-scan', { 
-    detail: { url: graphqlUrl } 
+    detail: { url: graphqlUrl, headers } 
   }));
+};
+
+const saveToAttacker = () => {
+  const protocol = props.request.port === 443 ? 'https' : 'http';
+  const portPart = (props.request.port === 80 || props.request.port === 443) ? '' : `:${props.request.port}`;
+  
+  const requestData = {
+    id: props.request.id?.toString() || '',
+    host: props.request.host || '',
+    port: props.request.port || 80,
+    path: props.request.path || '/',
+    query: props.request.query || '',
+    headers: parsedHttp.value?.headers || {},
+    raw: props.request.raw || ''
+  };
+  
+  localStorage.setItem('graphql-analyzer-context-attack-request', JSON.stringify(requestData));
+  
+  props.sdk.window.showToast('Redirecting to attack page...', { variant: 'info' });
+  
+  window.location.hash = '/graphql-analyzer';
+  localStorage.setItem('graphql-analyzer-navigate-to', 'Attacks');
+  localStorage.setItem('graphql-analyzer-navigate-timestamp', Date.now().toString());
+  
+  window.dispatchEvent(new CustomEvent('graphql-analyzer-navigate', { 
+    detail: { page: 'Attacks', requestId: requestData.id, request: requestData } 
+  }));
+  
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('graphql-analyzer-context-attack', { 
+      detail: { request: requestData } 
+    }));
+  }, 200);
 };
 </script>
 
 <template>
   <div class="h-full flex flex-col bg-surface-800">
-    <div v-if="isActuallyGraphQL" class="h-full flex flex-col">
+    <div v-if="isActuallyGraphQL" class="flex-1 min-h-0 flex flex-col">
       <!-- Clean Action Toolbar -->
-      <div class="flex items-center justify-between p-2 border-b border-surface-600">
+      <div class="flex items-center justify-between p-2 border-b border-surface-600 flex-shrink-0">
         <div class="flex items-center gap-2 text-surface-300">
           <i class="fas fa-project-diagram text-primary-400"></i>
           <span class="text-sm font-medium">{{ parsedHttp?.method || 'POST' }} {{ request.host }}{{ request.path }}</span>
@@ -294,6 +352,14 @@ const saveToScanner = () => {
             @click="copyQuery"
           />
           <Button
+            icon="fas fa-shield-alt"
+            size="small"
+            severity="danger"
+            text
+            v-tooltip="'Send to Attacker'"
+            @click="saveToAttacker"
+          />
+          <Button
             icon="fas fa-external-link-alt"
             size="small"
             severity="info"
@@ -305,13 +371,24 @@ const saveToScanner = () => {
       </div>
 
       <!-- Full Width Content -->
-      <div class="flex-1 overflow-hidden">
-        <TabView v-model="activeTab" class="h-full">
+      <div class="flex-1 min-h-0 overflow-hidden">
+        <TabView 
+          v-model="activeTab" 
+          class="h-full"
+          :pt="{
+            root: { class: 'h-full flex flex-col' },
+            navContainer: { class: 'flex-shrink-0' },
+            panelContainer: { class: 'flex-1 min-h-0 overflow-hidden' }
+          }"
+        >
           <!-- Query Tab -->
-          <TabPanel header="Query" class="h-full">
-            <div class="h-full flex flex-col">
+          <TabPanel 
+            header="Query"
+            :pt="{ content: { class: 'h-full p-0' } }"
+          >
+            <div class="h-full flex flex-col p-2">
               <!-- Validation Errors -->
-              <div v-if="queryValidationErrors.length > 0" class="border border-red-500 rounded mx-2 mt-2 p-2">
+              <div v-if="queryValidationErrors.length > 0" class="border border-red-500 rounded p-2 mb-2 flex-shrink-0">
                 <div class="flex items-center gap-2 text-red-400 text-sm font-medium mb-1">
                   <i class="fas fa-exclamation-triangle"></i>
                   <span>Validation Issues:</span>
@@ -325,49 +402,51 @@ const saveToScanner = () => {
               </div>
               
               <!-- Enhanced Query Display -->
-              <div class="flex-1 p-2">
-                <div class="border border-surface-600 rounded overflow-auto bg-surface-900" style="max-height: 252px; min-height: 120px;">
-                  <CodeEditor
-                    :content="editableQuery"
-                    language="graphql"
-                    :read-only="true"
-                    :font-size="12"
-                    @update:content="editableQuery = $event"
-                    class="h-full"
-                  />
-                </div>
+              <div class="flex-1 min-h-0 border border-surface-600 rounded overflow-hidden bg-surface-900">
+                <CodeEditor
+                  :content="editableQuery"
+                  language="graphql"
+                  :read-only="true"
+                  :font-size="12"
+                  @update:content="editableQuery = $event"
+                  class="h-full w-full"
+                />
               </div>
             </div>
           </TabPanel>
           
           <!-- Variables Tab -->
-          <TabPanel header="Variables" class="h-full">
+          <TabPanel 
+            header="Variables"
+            :pt="{ content: { class: 'h-full p-0' } }"
+          >
             <div class="h-full flex gap-2 p-2">
               <!-- Variables JSON -->
-              <div class="flex-1 flex flex-col">
-                <div class="mb-1">
+              <div class="flex-1 min-w-0 flex flex-col">
+                <div class="mb-2 flex-shrink-0">
                   <h4 class="text-sm font-medium text-surface-200">Variables JSON</h4>
                   <p class="text-xs text-surface-400">Variable values sent with the GraphQL query</p>
                 </div>
-                <div class="border border-surface-600 rounded overflow-hidden" :style="{ height: Math.min(queryFields.length * 48 + 16, 288) + 'px' }">
+                <div class="flex-1 min-h-0 border border-surface-600 rounded overflow-hidden">
                   <CodeEditor
                     :content="editableVariables"
                     language="json"
                     :read-only="true"
+                    :font-size="12"
                     @update:content="editableVariables = $event"
-                    class="h-full"
+                    class="h-full w-full"
                   />
                 </div>
               </div>
               
               <!-- Query Fields Info -->
-              <div class="w-80 flex flex-col">
-                <div class="mb-1">
+              <div class="w-80 flex-shrink-0 flex flex-col">
+                <div class="mb-2 flex-shrink-0">
                   <h4 class="text-sm font-medium text-surface-200">Query Fields ({{ queryFields.length }})</h4>
                   <p class="text-xs text-surface-400">All fields detected in the GraphQL query</p>
                 </div>
-                <div class="border border-surface-600 rounded overflow-hidden" :style="{ height: Math.min(queryFields.length * 48 + 16, 288) + 'px' }">
-                  <div v-if="queryFields.length === 0" class="flex items-center justify-center h-full text-surface-500 min-h-[120px]">
+                <div class="flex-1 min-h-0 border border-surface-600 rounded overflow-hidden">
+                  <div v-if="queryFields.length === 0" class="flex items-center justify-center h-full text-surface-500">
                     <div class="text-center">
                       <i class="fas fa-search text-xl mb-2"></i>
                       <div class="text-sm">No fields detected</div>
@@ -378,8 +457,8 @@ const saveToScanner = () => {
                       <div v-for="field in queryFields" :key="field.name" 
                            class="flex items-center gap-2 p-2 border border-surface-700 rounded">
                         <i class="fas fa-code text-primary-400 text-xs"></i>
-                        <div class="flex-1">
-                          <div class="text-sm font-mono text-surface-100">{{ field.name }}</div>
+                        <div class="flex-1 min-w-0">
+                          <div class="text-sm font-mono text-surface-100 truncate">{{ field.name }}</div>
                           <div class="text-xs text-surface-400">{{ field.type }}</div>
                         </div>
                       </div>
@@ -391,61 +470,66 @@ const saveToScanner = () => {
           </TabPanel>
           
           <!-- Request Info Tab -->
-          <TabPanel header="Request Info" class="h-full">
-            <div class="p-2 space-y-3">
-              <!-- Operation Info -->
-              <div v-if="graphqlData?.operationName" class="border border-surface-600 rounded p-3">
-                <h4 class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2">
-                  <i class="fas fa-tag text-warning-400"></i>
-                  Operation Name
-                </h4>
-                <div class="text-lg font-mono text-warning-300">{{ graphqlData.operationName }}</div>
-              </div>
-              
-              <!-- Endpoint Details -->
-              <div class="border border-surface-600 rounded p-3">
-                <h4 class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2">
-                  <i class="fas fa-server text-info-400"></i>
-                  Endpoint Details
-                </h4>
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <div class="text-xs text-surface-400 mb-1">Method</div>
-                    <div class="font-mono text-surface-100">{{ parsedHttp?.method || 'POST' }}</div>
-                  </div>
-                  <div>
-                    <div class="text-xs text-surface-400 mb-1">Host</div>
-                    <div class="font-mono text-surface-100">{{ request.host }}</div>
-                  </div>
-                  <div>
-                    <div class="text-xs text-surface-400 mb-1">Path</div>
-                    <div class="font-mono text-surface-100">{{ request.path || '/' }}</div>
-                  </div>
-                  <div>
-                    <div class="text-xs text-surface-400 mb-1">Port</div>
-                    <div class="font-mono text-surface-100">{{ request.port || (request.port === 443 ? 443 : 80) }}</div>
+          <TabPanel 
+            header="Request Info"
+            :pt="{ content: { class: 'h-full p-0' } }"
+          >
+            <div class="h-full overflow-auto p-2">
+              <div class="space-y-3">
+                <!-- Operation Info -->
+                <div v-if="graphqlData?.operationName" class="border border-surface-600 rounded p-3">
+                  <h4 class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2">
+                    <i class="fas fa-tag text-warning-400"></i>
+                    Operation Name
+                  </h4>
+                  <div class="text-lg font-mono text-warning-300">{{ graphqlData.operationName }}</div>
+                </div>
+                
+                <!-- Endpoint Details -->
+                <div class="border border-surface-600 rounded p-3">
+                  <h4 class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2">
+                    <i class="fas fa-server text-info-400"></i>
+                    Endpoint Details
+                  </h4>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <div class="text-xs text-surface-400 mb-1">Method</div>
+                      <div class="font-mono text-surface-100">{{ parsedHttp?.method || 'POST' }}</div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-surface-400 mb-1">Host</div>
+                      <div class="font-mono text-surface-100 break-all">{{ request.host }}</div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-surface-400 mb-1">Path</div>
+                      <div class="font-mono text-surface-100 break-all">{{ request.path || '/' }}</div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-surface-400 mb-1">Port</div>
+                      <div class="font-mono text-surface-100">{{ request.port || (request.port === 443 ? 443 : 80) }}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              <!-- Security Headers -->
-              <div class="border border-surface-600 rounded p-3">
-                <h4 class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2">
-                  <i class="fas fa-shield-alt text-warning-400"></i>
-                  Security Headers
-                </h4>
-                <div class="space-y-1">
-                  <div v-for="(value, key) in parsedHttp?.headers" :key="key" 
-                       v-show="isImportantHeader(key)"
-                       class="flex items-start gap-2 p-2 border border-surface-700 rounded">
-                    <div class="text-xs text-surface-400 font-mono min-w-24">{{ key }}:</div>
-                    <div class="text-xs text-surface-200 font-mono flex-1 break-all">{{ value }}</div>
-                  </div>
-                  <div v-if="!hasImportantHeaders" class="text-center text-surface-500 py-4">
-                    <div class="text-sm">
-                      <i class="fas fa-info-circle mb-2"></i>
-                      <div>No authentication or security headers detected</div>
-                      <div class="text-xs mt-1 text-surface-600">Looking for: Authorization, API Keys, Cookies, CSRF tokens</div>
+                
+                <!-- Security Headers -->
+                <div class="border border-surface-600 rounded p-3">
+                  <h4 class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2">
+                    <i class="fas fa-shield-alt text-warning-400"></i>
+                    Security Headers
+                  </h4>
+                  <div class="space-y-1">
+                    <div v-for="(value, key) in parsedHttp?.headers" :key="key" 
+                         v-show="isImportantHeader(key)"
+                         class="flex items-start gap-2 p-2 border border-surface-700 rounded">
+                      <div class="text-xs text-surface-400 font-mono min-w-24 flex-shrink-0">{{ key }}:</div>
+                      <div class="text-xs text-surface-200 font-mono flex-1 break-all">{{ value }}</div>
+                    </div>
+                    <div v-if="!hasImportantHeaders" class="text-center text-surface-500 py-4">
+                      <div class="text-sm">
+                        <i class="fas fa-info-circle mb-2"></i>
+                        <div>No authentication or security headers detected</div>
+                        <div class="text-xs mt-1 text-surface-600">Looking for: Authorization, API Keys, Cookies, CSRF tokens</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -456,7 +540,7 @@ const saveToScanner = () => {
       </div>
 
       <!-- Minimal Status Bar -->
-      <div class="flex items-center justify-between px-3 py-1 border-t border-surface-600 bg-surface-750 text-xs">
+      <div class="flex items-center justify-between px-3 py-1 border-t border-surface-600 bg-surface-800 text-xs flex-shrink-0">
         <div class="flex items-center gap-3 text-surface-400">
           <span class="flex items-center gap-1">
             <i class="fas fa-server"></i>

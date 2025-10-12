@@ -262,12 +262,33 @@ const copyToClipboard = async () => {
   }
 };
 
-// Navigate to Voyager function  
 const openInVoyager = () => {
   if (props.navigateTo && selectedSession.value) {
-    // Store the session ID for Voyager to auto-select
     localStorage.setItem('voyager-auto-select-session', selectedSession.value.id);
     props.navigateTo("Voyager");
+  }
+};
+
+const sendToAttacker = () => {
+  if (!selectedSession.value) return;
+  
+  const protocol = selectedSession.value.url.startsWith('https') ? 'https' : 'http';
+  const url = new URL(selectedSession.value.url);
+  
+  const requestData = {
+    id: Date.now().toString(),
+    host: url.hostname,
+    port: url.port ? parseInt(url.port) : (protocol === 'https' ? 443 : 80),
+    path: url.pathname || '/',
+    query: '',
+    headers: {},
+    raw: ''
+  };
+  
+  localStorage.setItem('graphql-analyzer-context-attack-request', JSON.stringify(requestData));
+  
+  if (props.navigateTo) {
+    props.navigateTo("Attacks");
   }
 };
 
@@ -481,6 +502,15 @@ export default {
                     <div class="flex justify-between items-center mb-3 pt-2">
                       <div class="text-sm font-medium capitalize text-surface-200">{{ selectedType.replace('-', ' ') }}</div>
                       <div class="flex gap-2">
+                        <Button 
+                          icon="fas fa-shield-alt" 
+                          size="small" 
+                          text 
+                          severity="danger"
+                          @click="sendToAttacker"
+                          v-tooltip="'Send to Attacker'"
+                          class="text-xs"
+                        />
                         <Button 
                           icon="fas fa-project-diagram" 
                           size="small" 

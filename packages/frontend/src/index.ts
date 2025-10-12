@@ -46,36 +46,36 @@ export const init = (sdk: FrontendSDK) => {
     icon: "fas fa-project-diagram",
   });
 
-  // Register the GraphQL request view mode
+  // Register the GraphQL request view mode in HTTP History
   sdk.httpHistory.addRequestViewMode({
     label: "GraphQL",
     view: {
       component: GraphQLViewMode,
-    },
-    condition: (request) => {
-      // Parse the raw HTTP request to check for GraphQL
-      if (!request.raw) return false;
-      
-      // Split by double CRLF to separate headers from body
-      const parts = request.raw.split('\r\n\r\n');
-      if (parts.length < 2) return false;
-      
-      const body = parts.slice(1).join('\r\n\r\n');
-      if (!body) return false;
-      
-      // Check method is POST
-      const firstLine = request.raw.split('\r\n')[0];
-      if (!firstLine.startsWith('POST')) return false;
-      
-      // Try to parse body as JSON and look for GraphQL structure
-      try {
-        const bodyJson = JSON.parse(body);
-        return !!(bodyJson.query && typeof bodyJson.query === 'string');
-      } catch {
-        // If not JSON, check if it's raw GraphQL
-        return /\b(query|mutation|subscription)\s*[\{\(]/.test(body);
-      }
-    },
+    }
+  });
+
+  // Register the GraphQL request view mode in Replay
+  sdk.replay.addRequestViewMode({
+    label: "GraphQL",
+    view: {
+      component: GraphQLViewMode,
+    }
+  });
+
+  // Register the GraphQL request view mode in Search
+  sdk.search.addRequestViewMode({
+    label: "GraphQL",
+    view: {
+      component: GraphQLViewMode,
+    }
+  });
+
+  // Register the GraphQL request view mode in Sitemap
+  sdk.sitemap.addRequestViewMode({
+    label: "GraphQL",
+    view: {
+      component: GraphQLViewMode,
+    }
   });
 
 
@@ -83,67 +83,101 @@ export const init = (sdk: FrontendSDK) => {
   // Register context menu commands
   sdk.commands.register("graphql-analyzer-scan", {
     name: "Scan GraphQL Endpoint",
-    run: (context) => {
-      let requests = [];
+    run: async (context) => {
+      let requestData: any = null;
 
       if (context.type === "RequestRowContext") {
-        context.requests.forEach((request: any) => {
-          requests.push({
-            id: request.id?.toString(),
-            host: request.host,
-            port: request.port,
-            path: request.path,
-            query: request.query,
-          });
-        });
+        if (context.requests.length > 0) {
+          requestData = context.requests[0];
+        }
       } else if (context.type === "RequestContext") {
-        const request = context.request as any;
-        requests.push({
-          id: request.id?.toString(),
-          host: request.host,
-          port: request.port,
-          path: request.path,
-          query: request.query,
-        });
-      } else {
-        sdk.window.showToast("No requests selected", { variant: "warning" });
+        requestData = context.request;
+      }
+
+      if (!requestData) {
+        sdk.window.showToast("No request selected", { variant: "warning" });
         return;
       }
 
-      if (requests.length === 0) {
-        sdk.window.showToast("No requests selected", { variant: "warning" });
+      // Validate required properties with null checks
+      if (!requestData.host || !requestData.port) {
+        sdk.window.showToast("Invalid request data", { variant: "error" });
         return;
       }
 
-      // Take the first request and construct GraphQL URL
-      const firstRequest = requests[0];
-      if (!firstRequest) {
-        sdk.window.showToast("No valid requests found", { variant: "warning" });
-        return;
-      }
+      // Build URL from basic properties with null safety
+      const protocol = requestData.port === 443 ? "https" : "http";
+      const portPart = (requestData.port === 80 || requestData.port === 443) ? "" : `:${requestData.port}`;
       
-      const protocol = firstRequest.port === 443 ? "https" : "http";
-      const portPart = (firstRequest.port === 80 || firstRequest.port === 443) ? "" : `:${firstRequest.port}`;
-      let graphqlUrl = `${protocol}://${firstRequest.host}${portPart}${firstRequest.path}`;
+      const path = requestData.path || '/';
+      const query = requestData.query || '';
+      const queryString = query ? `?${query}` : '';
       
-      // If path doesn't already contain 'graphql', try common GraphQL endpoints
-      if (!graphqlUrl.toLowerCase().includes('graphql')) {
-        graphqlUrl = `${protocol}://${firstRequest.host}${portPart}/graphql`;
+      let graphqlUrl = `${protocol}://${requestData.host}${portPart}${path}${queryString}`;
+      
+      // Only modify URL if it doesn't contain 'graphql' AND has no query parameters
+      if (!graphqlUrl.toLowerCase().includes('graphql') && !queryString) {
+        graphqlUrl = `${protocol}://${requestData.host}${portPart}/graphql`;
       }
 
-
-      sdk.window.showToast(`Scanning GraphQL endpoint: ${graphqlUrl}`, { variant: "info" });
+      const headers: Record<string, string> = {};
       
+      if (context.type === "RequestContext" && requestData.getRaw) {
+        try {
+          const rawData = requestData.getRaw();
+          const rawString = rawData?.toText?.() || '';
+          
+          if (rawString) {
+            const lines = rawString.split(/\r?\n/);
+            let inHeaders = false;
+            
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (!line) {
+                if (inHeaders) break;
+                continue;
+              }
+              
+              const trimmedLine = line.trim();
+              
+              if (i === 0) {
+                inHeaders = true;
+                continue;
+              }
+              
+              if (inHeaders && trimmedLine === '') break;
+              
+              if (inHeaders && trimmedLine.includes(':')) {
+                const colonIndex = trimmedLine.indexOf(':');
+                const headerName = trimmedLine.substring(0, colonIndex).trim();
+                const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+                if (headerName && headerValue && headerName.toLowerCase() !== 'content-length') {
+                  headers[headerName] = headerValue;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          // Continue without headers
+        }
+      }
 
       window.location.hash = "/graphql-analyzer";
       
-      // Store the URL to scan for the Dashboard to pick up
+      localStorage.setItem('graphql-analyzer-navigate-to', 'Dashboard');
+      localStorage.setItem('graphql-analyzer-navigate-timestamp', Date.now().toString());
       localStorage.setItem('graphql-analyzer-context-scan-url', graphqlUrl);
+      localStorage.setItem('graphql-analyzer-context-scan-headers', JSON.stringify(headers));
       
-      // Trigger a custom event that Dashboard can listen for
-      window.dispatchEvent(new CustomEvent('graphql-analyzer-context-scan', { 
-        detail: { url: graphqlUrl } 
+      window.dispatchEvent(new CustomEvent('graphql-analyzer-navigate', { 
+        detail: { page: 'Dashboard' } 
       }));
+      
+      window.dispatchEvent(new CustomEvent('graphql-analyzer-context-scan', { 
+        detail: { url: graphqlUrl, headers } 
+      }));
+      
+      sdk.window.showToast(`Scanning: ${graphqlUrl}`, { variant: "info" });
     },
     group: "GraphQL Analyzer",
     when: (context) => {
@@ -157,11 +191,10 @@ export const init = (sdk: FrontendSDK) => {
   // Register attack command  
   sdk.commands.register("graphql-analyzer-attack", {
     name: "Attack GraphQL Endpoint",
-    run: (context) => {
+    run: async (context) => {
       let selectedRequest: any = null;
 
       if (context.type === "RequestRowContext") {
-        // Take the first request
         selectedRequest = context.requests[0];
       } else if (context.type === "RequestContext") {
         selectedRequest = context.request;
@@ -172,44 +205,49 @@ export const init = (sdk: FrontendSDK) => {
         return;
       }
 
+      // Validate required properties
+      if (!selectedRequest.host || !selectedRequest.port) {
+        sdk.window.showToast("Invalid request data", { variant: "error" });
+        return;
+      }
 
       window.location.hash = "/graphql-analyzer";
       
-      // Store navigation target and request data
       localStorage.setItem('graphql-analyzer-navigate-to', 'Attacks');
+      localStorage.setItem('graphql-analyzer-navigate-timestamp', Date.now().toString());
       
-      // Use direct property access for request data
+      let rawString = '';
+      if (context.type === "RequestContext" && selectedRequest.getRaw) {
+        try {
+          const rawData = selectedRequest.getRaw();
+          rawString = rawData?.toText?.() || '';
+        } catch (error) {
+          // Continue without raw data
+        }
+      }
+      
+      // Use direct property access for request data with null safety
       const requestData = {
-        id: selectedRequest.id?.toString(),
-        host: selectedRequest.host,
-        port: selectedRequest.port,
-        path: selectedRequest.path,
-        query: selectedRequest.query,
+        id: selectedRequest.id?.toString() || '',
+        host: selectedRequest.host || '',
+        port: selectedRequest.port || 80,
+        path: selectedRequest.path || '/',
+        query: selectedRequest.query || '',
         headers: selectedRequest.headers || {},
-        raw: selectedRequest.raw || ""
+        raw: rawString
       };
       
       localStorage.setItem('graphql-analyzer-context-attack-request', JSON.stringify(requestData));
       
-      // Trigger navigation event for App component
       window.dispatchEvent(new CustomEvent('graphql-analyzer-navigate', { 
-        detail: { 
-          page: 'Attacks',
-          requestId: requestData.id,
-          request: requestData
-        } 
+        detail: { page: 'Attacks' } 
       }));
       
-      // Trigger context attack event for Attacks component (with delay to ensure component is mounted)
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('graphql-analyzer-context-attack', { 
-          detail: { 
-            request: requestData
-          } 
-        }));
-      }, 200);
+      window.dispatchEvent(new CustomEvent('graphql-analyzer-context-attack', { 
+        detail: { request: requestData } 
+      }));
 
-      sdk.window.showToast("Redirecting to attack page...", { variant: "info" });
+      sdk.window.showToast("Sending to attack page...", { variant: "info" });
     },
     group: "GraphQL Analyzer",
     when: (context) => {
@@ -246,3 +284,4 @@ export const init = (sdk: FrontendSDK) => {
     leadingIcon: "fas fa-shield-alt",
   });
 };
+

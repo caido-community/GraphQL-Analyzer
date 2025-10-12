@@ -35,10 +35,7 @@ const sections = ref([
           <li>Configure your attack parameters in the Attacks tab</li>
           <li>Review findings and export results to Caido Replay</li>
         </ol>
-      </div>
-
-      <div class="bg-surface-700 border-l-4 border-surface-500 px-4 py-1 rounded-r">
-        <p><strong>Pro Tip:</strong><br>You can also manually scan URLs using the Dashboard's scan form, or work with previously discovered sessions across all tabs.</p>
+        <p class="mt-3 text-surface-300">You can also manually scan URLs using the Dashboard's scan form, or work with previously discovered sessions across all tabs.</p>
       </div>
     `
   },
@@ -69,10 +66,7 @@ const sections = ref([
           <li>Delete by right-clicking and selecting delete</li>
           <li>Switch between to compare different schemas</li>
         </ul>
-      </div>
-
-      <div class="bg-surface-700 border-l-4 border-surface-500 px-4 py-1 rounded-r">
-        <p><strong>Note:</strong><br>Sessions are automatically saved and restored when you restart Caido, so your work is never lost.</p>
+        <p class="mt-3 text-surface-300">Sessions are automatically saved and restored when you restart Caido, so your work is never lost.</p>
       </div>
     `
   },
@@ -103,10 +97,7 @@ const sections = ref([
           <li>Relationships as connecting lines between types</li>
           <li>Field details when you hover over or click nodes</li>
         </ul>
-      </div>
-
-      <div class="bg-surface-700 border-l-4 border-surface-500 px-4 py-1 rounded-r">
-        <p><strong>Requirement:</strong><br>You must have at least one session in Explorer before using Voyager. Select a session to visualize its schema.</p>
+        <p class="mt-3 text-surface-300">You must have at least one session in Explorer before using Voyager. Select a session to visualize its schema.</p>
       </div>
     `
   },
@@ -138,10 +129,7 @@ const sections = ref([
           <li>Custom headers for authentication</li>
           <li>Target endpoint (from context menu, URL, or session)</li>
         </ul>
-      </div>
-
-      <div class="bg-surface-700 border-l-4 border-surface-500 px-4 py-1 rounded-r">
-        <p><strong>Security Warning:</strong><br>Only test endpoints you own or have explicit permission to test. Attacks run in background, allowing navigation to other tabs.</p>
+        <p class="mt-3 text-surface-300">Only test endpoints you own or have explicit permission to test. Attacks run in the background, allowing navigation to other tabs.</p>
       </div>
     `
   },
@@ -172,10 +160,6 @@ const sections = ref([
           <li><strong>Create Finding (+):</strong> Add the finding to Caido's findings database</li>
           <li><strong>View Details:</strong> Examine request/response data and payloads</li>
         </ul>
-      </div>
-
-      <div class="bg-surface-700 border-l-4 border-surface-500 px-4 py-2 rounded-r">
-        <p><strong>Background Processing:</strong><br>Attacks continue running in the background, so you can navigate to other tabs while testing progresses.</p>
       </div>
     `
   },
@@ -217,10 +201,7 @@ const sections = ref([
           <li>Custom header support for authentication</li>
           <li>Background processing without blocking the UI</li>
         </ul>
-      </div>
-
-      <div class="bg-surface-700 border-l-4 border-surface-500 px-4 py-2 rounded-r">
-        <p><strong>Performance:</strong><br>GraphQL Analyzer is optimized for minimal impact on Caido's performance, even during intensive testing.</p>
+        <p class="mt-3 text-surface-300">GraphQL Analyzer is optimized for minimal impact on Caido's performance, even during intensive testing.</p>
       </div>
     `
   }
@@ -302,7 +283,7 @@ export default {
               <div class="border-t border-surface-700 pt-4">
                 <div 
                   v-html="section.content" 
-                  class="text-base text-surface-300 prose prose-invert max-w-none"
+                  class="docs-content text-sm text-surface-200 leading-relaxed"
                 ></div>
               </div>
             </div>
@@ -361,4 +342,34 @@ export default {
   </div>
 </template>
 
+<style scoped>
+.docs-content :deep(p) {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+  color: rgb(229, 231, 235);
+}
 
+.docs-content :deep(h4) {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: rgb(248, 250, 252);
+}
+
+.docs-content :deep(ul),
+.docs-content :deep(ol) {
+  margin-bottom: 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.docs-content :deep(li) {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+  color: rgb(209, 213, 219);
+}
+
+.docs-content :deep(strong) {
+  font-weight: 600;
+  color: rgb(248, 250, 252);
+}
+</style>

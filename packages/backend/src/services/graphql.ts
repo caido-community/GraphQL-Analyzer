@@ -1,5 +1,5 @@
-import { Request as FetchRequest, fetch } from "caido:http";
 import type { SDK } from "caido:plugin";
+import { RequestSpec } from "caido:utils";
 
 import type { Result, GraphQLSchema } from "../types";
 
@@ -93,65 +93,127 @@ const INTROSPECTION_QUERY = `
 export class GraphQLService {
   constructor(private sdk: SDK) {}
 
-  async testEndpoint(url: string): Promise<Result<{ supportsIntrospection: boolean; schema?: GraphQLSchema }>> {
+  async testEndpoint(url: string, customHeaders?: Record<string, string>): Promise<Result<{ supportsIntrospection: boolean; schema?: GraphQLSchema }>> {
     try {
-      this.sdk.console.log(`GraphQL Service: Testing endpoint ${url}`);
+      // Ensure URL has protocol
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return { kind: "Error", error: "URL must start with http:// or https://" };
+      }
       
-      // Create request using Caido's fetch API
-      const request = new FetchRequest(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify({
-          query: INTROSPECTION_QUERY
-        })
+      // Extract host from URL for Host header
+      let hostHeader = '';
+      try {
+        const parsedUrl = new URL(url);
+        // Include port in Host header if it's not default (80 for http, 443 for https)
+        if (parsedUrl.port && 
+            ((parsedUrl.protocol === 'https:' && parsedUrl.port !== '443') ||
+             (parsedUrl.protocol === 'http:' && parsedUrl.port !== '80'))) {
+          hostHeader = `${parsedUrl.hostname}:${parsedUrl.port}`;
+        } else {
+          hostHeader = parsedUrl.hostname;
+        }
+      } catch (error) {
+        return { kind: "Error", error: "Invalid URL format" };
+      }
+      
+      if (!hostHeader) {
+        return { kind: "Error", error: "Failed to extract host from URL" };
+      }
+      
+      // Build headers object - start fresh to ensure no null values
+      const headers: Record<string, string> = {};
+      
+      // Add required headers one by one with explicit string values
+      headers["Host"] = String(hostHeader);
+      headers["Content-Type"] = "application/json";
+      headers["Accept"] = "application/json";
+      headers["User-Agent"] = "Caido/GraphQL-Analyzer";
+      
+      // Merge custom headers if provided (these override defaults)
+      if (customHeaders && typeof customHeaders === 'object') {
+        Object.entries(customHeaders).forEach(([key, value]) => {
+          // Only add if both key and value are non-empty strings
+          if (key && value && typeof key === 'string' && typeof value === 'string' && key.trim() && value.trim()) {
+            headers[key] = String(value); // Ensure it's a string
+          }
+        });
+      }
+      
+      // Validate all headers are strings (final safety check)
+      for (const [key, value] of Object.entries(headers)) {
+        if (typeof value !== 'string' || value === '' || value === 'null' || value === 'undefined') {
+          delete headers[key];
+        }
+      }
+      
+      // Create request using Caido SDK (same as attacks service)
+      const requestBody = JSON.stringify({
+        query: INTROSPECTION_QUERY
       });
-
-      // Send request
-      const response = await fetch(request);
       
-      if (!response) {
+      // Ensure URL is valid string
+      if (!url || typeof url !== 'string') {
+        return { kind: "Error", error: "Invalid URL" };
+      }
+      
+      const spec = new RequestSpec(url);
+      spec.setMethod("POST");
+      
+      // Set all headers using SDK
+      for (const [name, value] of Object.entries(headers)) {
+        if (value) {
+          spec.setHeader(name, value);
+        }
+      }
+      
+      spec.setBody(requestBody);
+
+      // Send request using Caido SDK (adds to HTTP History)
+      const result = await this.sdk.requests.send(spec);
+      
+      if (!result.response) {
         return { kind: "Error", error: "No response received from the endpoint" };
       }
 
-      const statusCode = response.status;
-      const contentType = response.headers.get("content-type") || "";
-      const responseBody = await response.text();
+      const statusCode = result.response.getCode();
+      const responseBody = result.response.getBody()?.toText() || '';
 
-      // Check if response is not successful
-      if (statusCode < 200 || statusCode >= 300) {
-        if (responseBody.includes("<!DOCTYPE") || responseBody.includes("<html")) {
-          return { kind: "Error", error: `This endpoint returned HTML instead of JSON. This is not a GraphQL endpoint.` };
-        }
-        
-        if (statusCode === 404) {
-          return { kind: "Error", error: `GraphQL endpoint not found (404). This URL does not appear to be a GraphQL endpoint.` };
-        }
-        
-        if (statusCode === 405) {
-          return { kind: "Error", error: `Method not allowed (405). This endpoint does not support GraphQL POST requests.` };
-        }
-        
-        if (statusCode >= 500) {
-          return { kind: "Error", error: `Server error (${statusCode}). The GraphQL endpoint may be experiencing issues.` };
-        }
-        
-        return { kind: "Error", error: `This endpoint is not responding as expected for GraphQL requests (HTTP ${statusCode}).` };
+      // Check for authentication errors first
+      if (statusCode === 401) {
+        return { kind: "Error", error: `Authentication required (HTTP 401). Add Authorization, Cookie, or API key headers.` };
+      }
+      
+      if (statusCode === 403) {
+        return { kind: "Error", error: `Access forbidden (HTTP 403). Your credentials lack required permissions.` };
+      }
+      
+      if (statusCode === 404) {
+        return { kind: "Error", error: `Endpoint not found (HTTP 404). Verify the URL is correct.` };
+      }
+      
+      if (statusCode === 405) {
+        return { kind: "Error", error: `Method not allowed (HTTP 405). This endpoint may not support POST requests.` };
+      }
+      
+      if (statusCode >= 500) {
+        return { kind: "Error", error: `Server error (HTTP ${statusCode}). The server is experiencing issues.` };
       }
 
-      // Check if response is JSON
-      if (!contentType.includes("application/json") && !responseBody.trim().startsWith("{")) {
-        if (responseBody.includes("<!DOCTYPE") || responseBody.includes("<html")) {
-          return { kind: "Error", error: "This endpoint returned HTML instead of JSON. This is not a GraphQL endpoint." };
+      // Only check for obvious HTML if status is not 200
+      if (statusCode !== 200) {
+        const trimmed = responseBody.trim();
+        if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
+          return { kind: "Error", error: `Received HTML page (HTTP ${statusCode}). This may not be a GraphQL endpoint.` };
         }
-        return { kind: "Error", error: `This endpoint did not return JSON as expected for GraphQL. This may not be a GraphQL endpoint.` };
+        const preview = responseBody.substring(0, 150);
+        return { kind: "Error", error: `Unexpected response (HTTP ${statusCode}): ${preview}...` };
       }
 
+      // For 200 responses, try to parse as JSON
       try {
         const jsonResponse = JSON.parse(responseBody);
         
+        // Check for errors in the GraphQL response
         if (jsonResponse.errors) {
           // Check if it's an introspection disabled error
           const introspectionDisabled = jsonResponse.errors.some((error: any) => 
@@ -164,30 +226,36 @@ export class GraphQLService {
             return { kind: "Ok", value: { supportsIntrospection: false } };
           }
           
-          return { kind: "Error", error: `GraphQL errors: ${jsonResponse.errors.map((e: any) => e.message).join(", ")}` };
+          // Return the GraphQL errors
+          return { kind: "Error", error: `GraphQL error: ${jsonResponse.errors.map((e: any) => e.message).join(", ")}` };
         }
 
+        // Check for successful introspection
         if (jsonResponse.data && jsonResponse.data.__schema) {
-          // Parse schema AND store raw introspection
           const schema = this.parseIntrospectionResult(jsonResponse.data.__schema);
-              // Store the COMPLETE raw introspection response for JSON Schema display
-    (schema as any).rawIntrospection = jsonResponse.data;
+          (schema as any).rawIntrospection = jsonResponse.data;
           return { kind: "Ok", value: { supportsIntrospection: true, schema } };
         }
 
-        return { kind: "Error", error: "Invalid GraphQL response: missing __schema data" };
+        // Response has data but no schema
+        if (jsonResponse.data) {
+          return { kind: "Error", error: "GraphQL endpoint responded but introspection is disabled or not available." };
+        }
+
+        // Valid JSON but not a GraphQL response
+        return { kind: "Error", error: "Endpoint returned JSON but it's not a valid GraphQL response." };
         
       } catch (parseError) {
-        // Better error message for JSON parsing failures
+        // Failed to parse as JSON
         const preview = responseBody.substring(0, 100);
-        return { kind: "Error", error: `Failed to parse JSON response. Got: "${preview}..." - This might not be a GraphQL endpoint.` };
+        return { kind: "Error", error: `Invalid JSON response: ${preview}...` };
       }
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       
       if (errorMessage.includes("ECONNREFUSED") || errorMessage.includes("ENOTFOUND")) {
-        return { kind: "Error", error: `Cannot connect to this endpoint. Please check the URL and ensure the server is running.` };
+        return { kind: "Error", error: `Cannot connect to endpoint. Check the URL and ensure the server is running.` };
       }
       
       if (errorMessage.includes("timeout")) {
@@ -195,10 +263,10 @@ export class GraphQLService {
       }
       
       if (errorMessage.includes("SSL") || errorMessage.includes("certificate")) {
-        return { kind: "Error", error: `SSL/Certificate error. There may be an issue with the HTTPS connection.` };
+        return { kind: "Error", error: `SSL/Certificate error. Check HTTPS connection.` };
       }
       
-      return { kind: "Error", error: `Unable to connect to this endpoint. Please verify the URL is correct and accessible.` };
+      return { kind: "Error", error: `Connection failed: ${errorMessage}` };
     }
   }
 
@@ -257,8 +325,7 @@ export class GraphQLService {
               name: type.name,
               kind: type.kind,
               description: type.description,
-              fields: type.fields ? type.fields.map(this.parseField) : undefined,
-              rawIntrospectionData: type // Store the complete raw type data
+              fields: type.fields ? type.fields.map(this.parseField) : undefined
             });
           }
           break;
@@ -272,8 +339,7 @@ export class GraphQLService {
               description: val.description,
               isDeprecated: val.isDeprecated || false,
               deprecationReason: val.deprecationReason
-            })) : [],
-            rawIntrospectionData: type // Store the complete raw enum data
+            })) : []
           });
           break;
         
@@ -339,8 +405,8 @@ export class GraphQLService {
     return type.name || 'Unknown';
   };
 
-  private generatePointsOfInterest(schema: GraphQLSchema) {
-    const points = [];
+  private generatePointsOfInterest(schema: GraphQLSchema): any[] {
+    const points: any[] = [];
 
     // Check for authentication-related fields
     const allFields = [...schema.queries, ...schema.mutations, ...schema.subscriptions];
@@ -537,27 +603,38 @@ export class GraphQLService {
     try {
       this.sdk.console.log(`Executing GraphQL query against: ${url}`);
       
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      const requestBody = JSON.stringify(payload);
+      
+      const spec = new RequestSpec(url);
+      spec.setMethod('POST');
+      spec.setHeader('Content-Type', 'application/json');
+      spec.setHeader('Accept', 'application/json');
+      spec.setBody(requestBody);
 
-      if (!response.ok) {
+      // Send request using Caido SDK (adds to HTTP History)
+      const result = await this.sdk.requests.send(spec);
+
+      if (!result.response) {
         return {
           kind: 'Error',
-          error: `HTTP ${response.status}: ${response.statusText}`,
+          error: 'No response received',
         };
       }
 
-      const result = await response.json();
+      const statusCode = result.response.getCode();
+      if (statusCode < 200 || statusCode >= 300) {
+        return {
+          kind: 'Error',
+          error: `HTTP ${statusCode}`,
+        };
+      }
+
+      const responseBody = result.response.getBody()?.toText() || '';
+      const parsedResult = JSON.parse(responseBody);
       
       // Check for GraphQL errors
-      if (result.errors && result.errors.length > 0) {
-        const errorMessages = result.errors.map((err: any) => err.message).join(', ');
+      if (parsedResult.errors && parsedResult.errors.length > 0) {
+        const errorMessages = parsedResult.errors.map((err: any) => err.message).join(', ');
         return {
           kind: 'Error',
           error: `GraphQL Error: ${errorMessages}`,
@@ -566,13 +643,14 @@ export class GraphQLService {
 
       return {
         kind: 'Ok',
-        value: result,
+        value: parsedResult,
       };
     } catch (error) {
-      this.sdk.console.error('Error executing GraphQL query:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error occurred';
+      this.sdk.console.error(`Error executing GraphQL query: ${errorMsg}`);
       return {
         kind: 'Error',
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: errorMsg,
       };
     }
   }

@@ -13,6 +13,27 @@ export class GraphQLAttackService {
   private addHeaders(spec: RequestSpec, config: AttackConfig) {
     let finalHeaders: Record<string, string> = {};
 
+    // Extract host and port from targetUrl for Host header
+    let hostHeader = "";
+    try {
+      const url = new URL(config.targetUrl);
+      const port = url.port;
+      const hostname = url.hostname;
+      
+      if (port) {
+        hostHeader = `${hostname}:${port}`;
+      } else {
+        const defaultPort = url.protocol === "https:" ? "443" : "80";
+        if ((url.protocol === "https:" && port !== "443") || (url.protocol === "http:" && port !== "80")) {
+          hostHeader = `${hostname}:${port || defaultPort}`;
+        } else {
+          hostHeader = hostname;
+        }
+      }
+    } catch (error) {
+      hostHeader = "";
+    }
+
     if (config.useOriginalHeaders && config.originalHeaders) {
       // Use original request headers as base
       finalHeaders = { ...config.originalHeaders };
@@ -20,6 +41,11 @@ export class GraphQLAttackService {
       // Ensure critical GraphQL headers are set correctly
       finalHeaders["Content-Type"] = "application/json";
       finalHeaders["Accept"] = "application/json";
+      
+      // Override Host header with correct value including port
+      if (hostHeader) {
+        finalHeaders["Host"] = hostHeader;
+      }
       
       // Remove query-related headers that might interfere
       delete finalHeaders["Content-Length"];
@@ -29,8 +55,13 @@ export class GraphQLAttackService {
       finalHeaders = {
         "Content-Type": "application/json",
         "Accept": "application/json", 
-        "User-Agent": "GraphQL-Analyzer/1.0"
+        "User-Agent": "Caido/GraphQL-Analyzer"
       };
+      
+      // Set Host header with port
+      if (hostHeader) {
+        finalHeaders["Host"] = hostHeader;
+      }
     }
 
     // Apply custom headers (these always override everything)
@@ -69,6 +100,8 @@ export class GraphQLAttackService {
       
       for (let i = 0; i < config.attackTypes.length; i++) {
         const attackType = config.attackTypes[i];
+        if (!attackType) continue; // Skip if undefined
+        
         const attackResult = await this.executeAttack(attackType, config);
         
         if (attackResult.kind === "Ok") {
@@ -181,14 +214,14 @@ export class GraphQLAttackService {
             lastResponse = result.response;
           }
 
-        if (result.response) {
-          const responseBody = result.response.getBody()?.toText() || "";
-          
-          if (result.response.getCode() === 200) {
-            try {
-              const jsonResponse = JSON.parse(responseBody);
-              
-                              if (jsonResponse.data && (jsonResponse.data.__schema || jsonResponse.data.__type)) {
+          if (result.response) {
+            const responseBody = result.response.getBody()?.toText() || "";
+            
+            if (result.response.getCode() === 200) {
+              try {
+                const jsonResponse = JSON.parse(responseBody);
+                
+                if (jsonResponse.data && (jsonResponse.data.__schema || jsonResponse.data.__type)) {
                   introspectionFound = true;
                   findings.push({
                     severity: "high",
@@ -198,27 +231,34 @@ export class GraphQLAttackService {
                     recommendation: "Disable introspection in production environments immediately. Most GraphQL implementations allow disabling introspection via configuration (e.g., Apollo Server's introspection: false). This prevents schema structure discovery while maintaining normal API functionality."
                   });
 
-                  // Note: Caido findings are now created manually by user from the frontend
-                  
-                  break; // Found introspection, no need to retry this query
+                  break;
+                }
+              } catch {
+                //
               }
-            } catch (parseError) {
-              // Continue to next test
+            } else if (result.response.getCode() === 400) {
+              try {
+                const jsonResponse = JSON.parse(responseBody);
+                if (jsonResponse.errors?.some((e: any) => 
+                  e.message?.toLowerCase().includes("introspection") ||
+                  e.message?.toLowerCase().includes("disabled")
+                )) {
+                  break;
+                }
+              } catch {
+                //
+              }
             }
           }
-        }
-              } catch (error) {
-
+        } catch (error) {
+          this.sdk.console.error(`Introspection attack error: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
       
-      // If we found introspection with this query, no need to test other queries
       if (introspectionFound) {
         break;
       }
     }
-
-    // If no introspection found, that's good - no finding needed for proper security behavior
 
     const result: AttackResult = {
       id: attackId,
@@ -250,17 +290,15 @@ export class GraphQLAttackService {
     const findings: AttackFinding[] = [];
     const maxDepth = config.maxDepth || 20;
     
-    // Test fewer depth levels for faster execution (was [5, 10, 15, maxDepth])
-    const depthTests = [10, maxDepth];
+    const depthTests = maxDepth <= 10 ? [maxDepth] : [10, maxDepth];
     let lastRequest: Request | undefined;
     let lastResponse: Response | undefined;
     let combinedPayload = "";
     let totalTiming = 0;
-    let protectionFound = false;
+    let foundProtection = false;
     
     for (const depth of depthTests) {
       try {
-        // Generate deeply nested query
         let nestedQuery = "id";
         for (let i = 0; i < depth; i++) {
           nestedQuery = `user { ${nestedQuery} }`;
@@ -285,7 +323,6 @@ export class GraphQLAttackService {
         const timing = endTime - startTime;
         totalTiming += timing;
         
-        // Store the request/response data - ensure we always have valid data
         if (result.request) {
           lastRequest = result.request;
         }
@@ -297,7 +334,7 @@ export class GraphQLAttackService {
           const responseBody = result.response.getBody()?.toText() || "";
           
           if (result.response.getCode() === 200) {
-            if (depth === maxDepth) {
+            if (depth === maxDepth && !foundProtection && findings.length === 0) {
               findings.push({
                 severity: "high",
                 title: "No Query Depth Limit Detected",
@@ -305,7 +342,7 @@ export class GraphQLAttackService {
                 evidence: `Successfully executed query with ${maxDepth} levels of deep nesting (${totalTiming}ms total execution time). The server processed the nested query without rejecting it, indicating no depth limits are configured.`,
                 recommendation: "Implement query depth limiting immediately to prevent DoS attacks. Most GraphQL servers support depth analysis (e.g., Apollo Server with 'graphql-depth-limit', GraphQL-Java with depth analysis). Set a reasonable depth limit (typically 5-15 levels) based on your application's legitimate use cases."
               });
-
+              break;
             }
           } else if (result.response.getCode() === 400) {
             try {
@@ -315,22 +352,18 @@ export class GraphQLAttackService {
                 e.message?.toLowerCase().includes("complex") ||
                 e.message?.toLowerCase().includes("nested")
               )) {
-                protectionFound = true;
-                // Protection found - this is good security behavior, no finding needed
-                break; // Found protection, no need to test deeper
+                foundProtection = true;
+                break;
               }
             } catch {
-              // Continue testing
+              //
             }
           }
         }
       } catch (error) {
-
+        this.sdk.console.error(`Depth attack error: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-
-    // If no protection found and no high-severity findings, add medium finding
-
 
     const result: AttackResult = {
       id: attackId,
@@ -391,7 +424,6 @@ export class GraphQLAttackService {
     let lastResponse: Response | undefined;
     let combinedPayload = "";
     let totalTiming = 0;
-    let protectionFound = false;
     
     for (const complexityTest of complexityTests) {
       try {
@@ -433,8 +465,6 @@ export class GraphQLAttackService {
                 evidence: `${complexityTest.name} executed successfully with ${timing}ms response time. The complex query with multiple field selections and nested relationships was processed without rejection, indicating absence of complexity analysis.`,
                 recommendation: "Implement query complexity analysis immediately to prevent resource exhaustion attacks. Use tools like 'graphql-query-complexity' for Apollo Server or similar cost analysis for other GraphQL implementations. Set reasonable complexity limits (typically 100-1000 points) and consider implementing query whitelisting for known safe queries."
               });
-
-              // Note: Caido findings are now created manually by user from the frontend
             }
           } else if (result.response.getCode() === 400) {
             try {
@@ -444,16 +474,15 @@ export class GraphQLAttackService {
                 e.message?.toLowerCase().includes("cost") ||
                 e.message?.toLowerCase().includes("limit")
               )) {
-                protectionFound = true;
-                // Protection found - this is good security behavior, no finding needed
+                //
               }
             } catch {
-              // Continue testing
+              //
             }
           }
         }
       } catch (error) {
-
+        this.sdk.console.error(`Complexity attack error: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
@@ -495,7 +524,6 @@ export class GraphQLAttackService {
     let lastResponse: Response | undefined;
     let combinedPayload = "";
     let totalTiming = 0;
-    let protectionFound = false;
     
     for (const batchSize of batchTests) {
       try {
@@ -558,22 +586,17 @@ export class GraphQLAttackService {
                 e.message?.toLowerCase().includes("array") ||
                 e.message?.toLowerCase().includes("multiple")
               )) {
-                protectionFound = true;
-                // Protection found - this is good security behavior, no finding needed
-                break; // Found protection
+                break;
               }
             } catch {
-              // Continue testing
+              //
             }
           }
         }
       } catch (error) {
-
+        this.sdk.console.error(`Batch attack error: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-
-    // If no clear protection found and no findings, no need to create "unclear" findings
-    // Only actual vulnerabilities should create findings
 
     const result: AttackResult = {
       id: attackId,
@@ -635,7 +658,6 @@ export class GraphQLAttackService {
     let lastResponse: Response | undefined;
     let combinedPayload = "";
     let totalTiming = 0;
-    let suggestionsFound = false;
     
     for (const test of suggestionTests) {
       try {
@@ -677,7 +699,6 @@ export class GraphQLAttackService {
               );
 
               if (suggestiveErrors.length > 0) {
-                suggestionsFound = true;
                 findings.push({
                   severity: "low",
                   title: `Field Suggestion Information Disclosure (${test.name})`,
@@ -688,15 +709,13 @@ export class GraphQLAttackService {
               }
             }
           } catch {
-            // Continue testing other queries
+            //
           }
         }
       } catch (error) {
-
+        this.sdk.console.error(`Field suggestion attack error: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-
-    // If no suggestions found, that's good - no finding needed for proper security behavior
 
     const result: AttackResult = {
       id: attackId,
@@ -722,24 +741,6 @@ export class GraphQLAttackService {
     return { kind: "Ok", value: result };
   }
 
-
-
-  // Create Caido finding for security issues
-  private async createCaidoFinding(finding: AttackFinding, request: Request): Promise<void> {
-    try {
-      if (finding.severity === "critical" || finding.severity === "high") {
-        await this.sdk.findings.create({
-          title: `GraphQL ${finding.title}`,
-          description: `${finding.description}\n\n**Evidence**: ${finding.evidence}\n\n**Recommendation**: ${finding.recommendation}`,
-          reporter: "GraphQL Analyzer",
-          request: request
-        });
-
-      }
-    } catch (error) {
-
-    }
-  }
 
   // Generate attack templates for manual testing 
   generateAttackTemplates(): Record<AttackType, { name: string; description: string; query: string }> {
@@ -855,10 +856,8 @@ export class GraphQLAttackService {
     });
 
 
-
-    // Start attacks in background with error handling
     this.executeAttacksRealTime(sessionId, config).catch(error => {
-
+      this.sdk.console.error(`Attack execution error: ${error instanceof Error ? error.message : String(error)}`);
       const session = GraphQLAttackService.attackSessions.get(sessionId);
       if (session) {
         session.status = 'failed';
@@ -917,6 +916,7 @@ export class GraphQLAttackService {
         }
 
         const attackType = config.attackTypes[i];
+        if (!attackType) continue; // Skip if undefined
         
         // Update progress
         session.progress = (i / config.attackTypes.length) * 100;

@@ -59,6 +59,9 @@ const responseEditor = ref<any>(null);
 const payloadExpanded = ref(false);
 const responseExpanded = ref(false);
 
+// Tab state for attack results detail view
+const activeResultTab = ref(0);
+
 // Attack configuration
 const selectedAttacks = ref<AttackType[]>(["introspection"]);
 const maxDepth = ref(10);
@@ -236,6 +239,17 @@ const getMaxSeverity = (findings: any[]) => {
   if (findings.some(f => f.severity === "medium")) return "medium";
   if (findings.some(f => f.severity === "low")) return "low";
   return "info";
+};
+
+// Toggle select/deselect all attack vectors
+const toggleSelectAll = () => {
+  if (selectedAttacks.value.length === availableAttacks.length) {
+    // Deselect all
+    selectedAttacks.value = [];
+  } else {
+    // Select all
+    selectedAttacks.value = availableAttacks.map(attack => attack.value);
+  }
 };
 
 // Load Explorer sessions (separate from attack sessions)
@@ -468,9 +482,60 @@ const executeAttacks = async () => {
       }
     });
 
-    // Use custom headers only
+    // Extract original headers from selected request if using request mode
     let originalHeaders: Record<string, string> | undefined = undefined;
     let useOriginalHeaders = false;
+    
+    if (useSelectedRequest.value && selectedRequest.value && selectedRequest.value.raw) {
+      // Parse headers from raw HTTP request
+      useOriginalHeaders = true;
+      originalHeaders = {};
+      
+      try {
+        const raw = selectedRequest.value.raw;
+        // HTTP uses \r\n line endings - handle both \r\n and \n
+        const lines = raw.split(/\r?\n/);
+        let inHeaders = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) {
+            // Empty line signals end of headers
+            if (inHeaders) break;
+            continue;
+          }
+          
+          const trimmedLine = line.trim();
+          
+          if (i === 0) {
+            // First line is the request line (GET /path HTTP/1.1)
+            inHeaders = true;
+            continue;
+          }
+          
+          if (inHeaders && trimmedLine === '') {
+            // Empty line signals end of headers
+            break;
+          }
+          
+          if (inHeaders && trimmedLine.includes(':')) {
+            const colonIndex = trimmedLine.indexOf(':');
+            const headerName = trimmedLine.substring(0, colonIndex).trim();
+            const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+            if (headerName && headerValue) {
+              // Exclude Content-Length as it will be recalculated
+              if (headerName.toLowerCase() !== 'content-length') {
+                originalHeaders[headerName] = headerValue;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // If parsing fails, fall back to no headers
+        originalHeaders = undefined;
+        useOriginalHeaders = false;
+      }
+    }
 
     const config: AttackConfig = {
       targetUrl: targetUrl.value,
@@ -479,7 +544,7 @@ const executeAttacks = async () => {
       maxDepth: maxDepth.value,
       batchSize: batchSize.value,
       customHeaders: Object.keys(headersObj).length > 0 ? headersObj : undefined,
-      originalHeaders: useOriginalHeaders ? originalHeaders : undefined,
+      originalHeaders: originalHeaders,
       useOriginalHeaders: useOriginalHeaders,
       targetType: useSelectedRequest.value ? 'request' : (useCustomUrl.value ? 'custom' : 'session'),
       selectedRequestData: useSelectedRequest.value ? selectedRequest.value : undefined
@@ -490,6 +555,8 @@ const executeAttacks = async () => {
     
     if (sessionResult.kind === "Error") {
       sdk.window.showToast(`Failed to start attacks: ${sessionResult.error}`, { variant: "error" });
+      isAttacking.value = false;
+      attackProgress.value = 0;
       return;
     }
 
@@ -664,6 +731,8 @@ const selectResult = (result: AttackResult) => {
   // Reset expansion states when selecting new result
   payloadExpanded.value = false;
   responseExpanded.value = false;
+  // Always reset to Request/Response tab (index 0) when selecting a new result
+  activeResultTab.value = 0;
   
   // Force refresh editors on every selection
   nextTick(() => {
@@ -926,6 +995,54 @@ onMounted(() => {
       useCustomUrl.value = false;
       selectedSessionId.value = null;
       
+      // Parse and populate custom headers from the request
+      if (requestData.raw) {
+        try {
+          const raw = requestData.raw;
+          const lines = raw.split(/\r?\n/);
+          const extractedHeaders: Record<string, string> = {};
+          let inHeaders = false;
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line) {
+              if (inHeaders) break;
+              continue;
+            }
+            
+            const trimmedLine = line.trim();
+            
+            if (i === 0) {
+              inHeaders = true;
+              continue;
+            }
+            
+            if (inHeaders && trimmedLine === '') {
+              break;
+            }
+            
+            if (inHeaders && trimmedLine.includes(':')) {
+              const colonIndex = trimmedLine.indexOf(':');
+              const headerName = trimmedLine.substring(0, colonIndex).trim();
+              const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+              if (headerName && headerValue && headerName.toLowerCase() !== 'content-length') {
+                extractedHeaders[headerName] = headerValue;
+              }
+            }
+          }
+          
+          // Populate custom headers array
+          if (Object.keys(extractedHeaders).length > 0) {
+            customHeaders.value = [];
+            Object.entries(extractedHeaders).forEach(([key, value]) => {
+              customHeaders.value.push({ name: key, value });
+            });
+          }
+        } catch (error) {
+          // If parsing fails, continue without headers
+        }
+      }
+      
       // Clean up localStorage
       localStorage.removeItem('graphql-analyzer-context-attack-request');
       
@@ -975,6 +1092,54 @@ onMounted(() => {
       useSelectedRequest.value = true;
       useCustomUrl.value = false;
       selectedSessionId.value = null;
+      
+      // Parse and populate custom headers from the request
+      if (requestData.raw) {
+        try {
+          const raw = requestData.raw;
+          const lines = raw.split(/\r?\n/);
+          const extractedHeaders: Record<string, string> = {};
+          let inHeaders = false;
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line) {
+              if (inHeaders) break;
+              continue;
+            }
+            
+            const trimmedLine = line.trim();
+            
+            if (i === 0) {
+              inHeaders = true;
+              continue;
+            }
+            
+            if (inHeaders && trimmedLine === '') {
+              break;
+            }
+            
+            if (inHeaders && trimmedLine.includes(':')) {
+              const colonIndex = trimmedLine.indexOf(':');
+              const headerName = trimmedLine.substring(0, colonIndex).trim();
+              const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+              if (headerName && headerValue && headerName.toLowerCase() !== 'content-length') {
+                extractedHeaders[headerName] = headerValue;
+              }
+            }
+          }
+          
+          // Populate custom headers array
+          if (Object.keys(extractedHeaders).length > 0) {
+            customHeaders.value = [];
+            Object.entries(extractedHeaders).forEach(([key, value]) => {
+              customHeaders.value.push({ name: key, value });
+            });
+          }
+        } catch (error) {
+          // If parsing fails, continue without headers
+        }
+      }
       
       // Automatically create a new attack session for this request
       createNewAttackSession(false);
@@ -1188,7 +1353,7 @@ export default {
                         type="radio" 
                         id="target-custom"
                         :checked="useCustomUrl"
-                        @change="() => { useCustomUrl = true; useSelectedRequest = false; }"
+                        @change="() => { useCustomUrl = true; useSelectedRequest = false; customHeaders = []; }"
                         class="text-primary-600"
                       />
                       <label for="target-custom" class="text-sm font-medium">Use Custom URL</label>
@@ -1277,7 +1442,17 @@ export default {
             <Card class="h-fit" :pt="{ body: { class: 'h-fit p-0' }, content: { class: 'h-fit flex flex-col' } }">
               <template #content>
                 <div class="p-4">
-                  <h4 class="text-base font-semibold mb-3">Attack Vectors</h4>
+                  <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-base font-semibold">Attack Vectors</h4>
+                    <Button
+                      :label="selectedAttacks.length === availableAttacks.length ? 'Deselect All' : 'Select All'"
+                      :icon="selectedAttacks.length === availableAttacks.length ? 'fas fa-times-circle' : 'fas fa-check-circle'"
+                      size="small"
+                      text
+                      @click="toggleSelectAll"
+                      v-tooltip="selectedAttacks.length === availableAttacks.length ? 'Deselect all attack vectors' : 'Select all attack vectors'"
+                    />
+                  </div>
                   
                   <!-- Attack Grid - 2 per row -->
                   <div class="grid grid-cols-2 gap-3">
@@ -1611,6 +1786,8 @@ export default {
 
                   <div class="flex-1 min-h-0" style="height: 100%; max-height: 100%;">
                     <TabView 
+                      :activeIndex="activeResultTab"
+                      @update:activeIndex="activeResultTab = $event"
                       class="h-full"
                       :pt="{
                         panelContainer: { class: 'h-full overflow-hidden' },
@@ -1672,6 +1849,7 @@ export default {
                                   :content="selectedResult.payload"
                                   language="json"
                                   :read-only="true"
+                                  :font-size="12"
                                 />
                               </div>
                             </div>
@@ -1709,6 +1887,7 @@ export default {
                                   :content="selectedResult.response.body"
                                   language="json"
                                   :read-only="true"
+                                  :font-size="12"
                                 />
                                 <div v-else class="h-full flex items-center justify-center text-surface-500">
                                   <div class="text-center">
@@ -1752,6 +1931,7 @@ export default {
                                     :content="selectedResult.payload"
                                     language="json"
                                     :read-only="true"
+                                    :font-size="12"
                                   />
                                 </div>
                               </div>
@@ -1782,6 +1962,7 @@ export default {
                                     :content="selectedResult.response.body"
                                     language="json"
                                     :read-only="true"
+                                    :font-size="12"
                                   />
                                   <div v-else class="h-full flex items-center justify-center text-surface-500">
     <div class="text-center">
