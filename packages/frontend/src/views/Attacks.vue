@@ -891,7 +891,7 @@ const createFindingFromResult = async (result: AttackResult) => {
   });
 
   const finding = sortedFindings[0];
-  
+
   try {
     if (!result.requestId) {
       sdk.window.showToast("No request ID available for finding creation", { variant: "error" });
@@ -899,7 +899,7 @@ const createFindingFromResult = async (result: AttackResult) => {
     }
 
     const createResult = await sdk.backend.createCaidoFinding(finding, result.requestId);
-    
+
     if (createResult.kind === "Ok") {
       sdk.window.showToast(`Created finding: ${finding.title}`, { variant: "success" });
     } else {
@@ -907,6 +907,25 @@ const createFindingFromResult = async (result: AttackResult) => {
     }
   } catch (error) {
     sdk.window.showToast(`Error creating finding: ${error instanceof Error ? error.message : 'Unknown error'}`, { variant: "error" });
+  }
+};
+
+// Copy finding to clipboard
+const copyFindingToClipboard = async (finding: any) => {
+  try {
+    const findingText = `${finding.title}
+
+Severity: ${finding.severity.toUpperCase()}
+
+Description:
+${finding.description}
+${finding.evidence ? `\nEvidence:\n${finding.evidence}` : ''}
+${finding.recommendation ? `\nRecommendation:\n${finding.recommendation}` : ''}`;
+
+    await window.navigator.clipboard.writeText(findingText);
+    sdk.window.showToast("Finding copied to clipboard", { variant: "success" });
+  } catch (error) {
+    sdk.window.showToast("Failed to copy to clipboard", { variant: "error" });
   }
 };
 
@@ -2012,13 +2031,22 @@ export default {
                                     {{ finding.severity }}
                                   </span>
                                   
+                                  <!-- Copy to Clipboard Button -->
+                                  <Button
+                                    icon="fas fa-copy"
+                                    size="small"
+                                    severity="secondary"
+                                    @click="copyFindingToClipboard(finding)"
+                                    v-tooltip="'Copy to clipboard'"
+                                  />
+
                                   <!-- Create Finding Button (for all severities) -->
                                   <Button
                                     label="Create Finding"
                                     icon="fas fa-plus"
                                     size="small"
-                                    :severity="finding.severity === 'critical' || finding.severity === 'high' ? 'danger' : 
-                                              finding.severity === 'medium' ? 'warn' : 
+                                    :severity="finding.severity === 'critical' || finding.severity === 'high' ? 'danger' :
+                                              finding.severity === 'medium' ? 'warn' :
                                               finding.severity === 'low' ? 'info' : 'secondary'"
                                     @click="createCaidoFinding(finding)"
                                   />
