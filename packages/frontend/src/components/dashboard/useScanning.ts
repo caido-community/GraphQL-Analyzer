@@ -194,8 +194,9 @@ export function useScanning(
               currentStorage.dashboardActivities.slice(0, 20);
           }
 
-          // @ts-expect-error - SDK storage.set accepts any object
-          await sdk.storage.set(currentStorage);
+          await sdk.storage.set(
+            currentStorage as unknown as Record<string, never>,
+          );
           loadRecentSessions();
 
           sdk.window.showToast("Schema scanned successfully!", {
@@ -227,8 +228,9 @@ export function useScanning(
               currentStorage.dashboardActivities.slice(0, 20);
           }
 
-          // @ts-expect-error - SDK storage.set accepts any object
-          await sdk.storage.set(currentStorage);
+          await sdk.storage.set(
+            currentStorage as unknown as Record<string, never>,
+          );
           loadRecentSessions();
 
           sdk.window.showToast(
@@ -269,8 +271,8 @@ export function useScanning(
   const deleteAllData = async (): Promise<void> => {
     try {
       const emptyStorage: Record<string, unknown> = {};
-      // @ts-expect-error - SDK storage.set accepts any object
-      await sdk.storage.set(emptyStorage);
+
+      await sdk.storage.set(emptyStorage as unknown as Record<string, never>);
 
       recentSessions.value = [];
 
@@ -343,7 +345,7 @@ export function useScanning(
             });
           }
         } catch {
-          // Ignore parse errors
+          void 0;
         }
       }
 

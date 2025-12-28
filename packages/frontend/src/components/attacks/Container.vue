@@ -39,7 +39,6 @@ defineProps<{
   ) => void;
 }>();
 
-// Types
 type SelectedRequest =
   | {
       id?: string;
@@ -65,7 +64,6 @@ type CodeEditorInstance =
     }
   | undefined;
 
-// State
 const sessions = ref<ExplorerSession[]>([]);
 const selectedSessionId = ref<string | undefined>(undefined);
 const customUrl = ref("");
@@ -80,29 +78,23 @@ const attackCancelled = ref(false);
 const currentAttackSessionId = ref<string | undefined>(undefined);
 const pollInterval = ref<number | undefined>(undefined);
 
-// Attack Sessions State
 const attackSessions = ref<AttackSession[]>([]);
 const selectedAttackSessionId = ref<string | undefined>(undefined);
 const currentActiveAttackId = ref<string | undefined>(undefined);
 
-// SDK Editors
 const requestEditor = ref<CodeEditorInstance>(undefined);
 const responseEditor = ref<CodeEditorInstance>(undefined);
 
-// Attack Data expansion state
 const payloadExpanded = ref(false);
 const responseExpanded = ref(false);
 
-// Tab state for attack results detail view
 const activeResultTab = ref(0);
 
-// Attack configuration
 const selectedAttacks = ref<AttackType[]>(["introspection"]);
 const maxDepth = ref(10);
 const batchSize = ref(5);
 const customHeaders = ref<Array<{ name: string; value: string }>>([]);
 
-// Custom headers functions
 const addCustomHeader = () => {
   if (customHeaders.value.length < 10) {
     customHeaders.value.push({ name: "", value: "" });
@@ -113,7 +105,6 @@ const removeCustomHeader = (index: number) => {
   customHeaders.value.splice(index, 1);
 };
 
-// Available attack types
 const availableAttacks = [
   {
     value: "introspection" as AttackType,
@@ -147,7 +138,6 @@ const availableAttacks = [
   },
 ];
 
-// Computed
 const targetUrl = computed(() => {
   if (
     useSelectedRequest.value === true &&
@@ -156,12 +146,10 @@ const targetUrl = computed(() => {
     try {
       const request = selectedRequest.value;
 
-      // If url is directly available, use it
       if (request.url !== undefined && request.url !== "") {
         return request.url;
       }
 
-      // Otherwise construct from parts
       if (request.host !== undefined && request.host !== "") {
         const protocol = request.port === 443 ? "https" : "http";
         const portPart =
@@ -172,7 +160,7 @@ const targetUrl = computed(() => {
         return `${protocol}://${request.host}${portPart}${path}`;
       }
     } catch (error) {
-      // If parsing fails, fall through to other options
+      void 0;
     }
   }
 
@@ -208,7 +196,6 @@ const selectedAttackSession = computed(() => {
 });
 
 const attackResultsTableData = computed(() => {
-  // Deduplicate attack results based on attackType and targetUrl
   const deduplicatedResults: AttackResult[] = [];
   const seen = new Set<string>();
 
@@ -219,7 +206,6 @@ const attackResultsTableData = computed(() => {
       seen.add(dedupeKey);
       deduplicatedResults.push(result);
     } else {
-      // If we've seen this attack type + target before, merge findings
       const existingResult = deduplicatedResults.find(
         (r) =>
           r.attackType === result.attackType &&
@@ -227,16 +213,13 @@ const attackResultsTableData = computed(() => {
       );
 
       if (existingResult) {
-        // Deduplicate findings by title and severity
         const findingsSet = new Set<string>();
         const mergedFindings = [...existingResult.findings];
 
-        // Add existing findings to set
         existingResult.findings.forEach((finding) => {
           findingsSet.add(`${finding.title}-${finding.severity}`);
         });
 
-        // Add new unique findings
         result.findings.forEach((finding) => {
           const findingKey = `${finding.title}-${finding.severity}`;
           if (!findingsSet.has(findingKey)) {
@@ -246,7 +229,6 @@ const attackResultsTableData = computed(() => {
         });
 
         existingResult.findings = mergedFindings;
-        // Update timing to use the most recent
         if (
           result.response?.timing !== undefined &&
           existingResult.response !== undefined
@@ -274,7 +256,6 @@ const attackResultsTableData = computed(() => {
   }));
 });
 
-// Helper functions
 const getStatusIcon = (status: string) => {
   switch (status) {
     case "completed":
@@ -339,18 +320,14 @@ const getMaxSeverity = (findings: AttackResult["findings"]) => {
   return "info";
 };
 
-// Toggle select/deselect all attack vectors
 const toggleSelectAll = () => {
   if (selectedAttacks.value.length === availableAttacks.length) {
-    // Deselect all
     selectedAttacks.value = [];
   } else {
-    // Select all
     selectedAttacks.value = availableAttacks.map((attack) => attack.value);
   }
 };
 
-// Load Explorer sessions (separate from attack sessions)
 const loadSessions = () => {
   try {
     const stored = sdk.storage.get() as
@@ -376,14 +353,13 @@ const loadSessions = () => {
   }
 };
 
-// Attack Sessions Storage Functions
 const saveAttackSessions = async () => {
   try {
     const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
     currentStorage.attackSessions = attackSessions.value;
     currentStorage.selectedAttackSessionId = selectedAttackSessionId.value;
-    // @ts-expect-error - SDK storage.set accepts any object
-    await sdk.storage.set(currentStorage);
+
+    await sdk.storage.set(currentStorage as unknown as Record<string, never>);
   } catch (error) {
     sdk.window.showToast("Failed to save attack sessions", {
       variant: "error",
@@ -410,7 +386,6 @@ const loadAttackSessions = () => {
           ? new Date(session.completedAt)
           : undefined,
       }));
-      // Only restore selected session if it still exists
       if (
         stored.selectedAttackSessionId !== undefined &&
         attackSessions.value.some(
@@ -439,7 +414,6 @@ const createAttackSession = (config: AttackConfig): AttackSession => {
       domain = new URL(config.targetUrl).hostname;
     }
   } catch (error) {
-    // If URL parsing fails, use "Unknown"
     domain = "Unknown";
   }
 
@@ -460,15 +434,12 @@ const selectAttackSession = (sessionId: string) => {
   selectedAttackSessionId.value = sessionId;
   const session = selectedAttackSession.value;
   if (session) {
-    // Load the attack results for this session
     attackResults.value = session.results;
     selectedResult.value = undefined;
 
-    // Clear any previous editors
     requestEditor.value = undefined;
     responseEditor.value = undefined;
 
-    // Restore target selection state based on session config
     if (session.config.targetType === "request") {
       useSelectedRequest.value = true;
       useCustomUrl.value = false;
@@ -482,30 +453,24 @@ const selectAttackSession = (sessionId: string) => {
       customUrl.value = session.config.targetUrl;
       selectedSessionId.value = undefined;
     } else {
-      // Default to session
       useSelectedRequest.value = false;
       useCustomUrl.value = false;
       selectedSessionId.value = session.config.sessionId ?? undefined;
     }
 
-    // Update UI state based on session status
     isAttacking.value = session.status === "running";
 
-    // If this session is currently running, set up polling
     if (
       session.status === "running" &&
       currentActiveAttackId.value === sessionId
     ) {
       currentAttackSessionId.value = currentActiveAttackId.value;
     } else if (session.status !== "running") {
-      // Clear attacking state for completed sessions
       isAttacking.value = false;
       currentAttackSessionId.value = undefined;
     }
 
-    // Force refresh of the UI in next tick
     nextTick(() => {
-      // Trigger reactivity for computed properties
       if (selectedResult.value !== undefined) {
         const currentResult = selectedResult.value;
         selectedResult.value = undefined;
@@ -535,7 +500,6 @@ const deleteAttackSession = (sessionId: string) => {
     const session = attackSessions.value[index];
     if (!session) return;
 
-    // Stop background attack if this session is currently running
     if (
       session.status === "running" &&
       currentActiveAttackId.value === sessionId
@@ -562,7 +526,6 @@ const deleteAttackSession = (sessionId: string) => {
 };
 
 const createNewAttackSession = async (showToast = true) => {
-  // Create a new empty attack session
   const newSession: AttackSession = {
     id: Date.now().toString(36) + Math.random().toString(36).substr(2),
     title: "New Attack Session",
@@ -582,20 +545,16 @@ const createNewAttackSession = async (showToast = true) => {
     criticalFindings: 0,
   };
 
-  // Add to sessions and select it
   attackSessions.value.unshift(newSession);
   selectedAttackSessionId.value = newSession.id;
 
-  // Clear results
   attackResults.value = [];
   selectedResult.value = undefined;
   requestEditor.value = undefined;
   responseEditor.value = undefined;
 
-  // Save the new session
   await saveAttackSessions();
 
-  // Save sessions
   saveAttackSessions();
 
   if (showToast) {
@@ -609,7 +568,6 @@ const renameAttackSession = (sessionId: string, newTitle: string) => {
   updateAttackSession(sessionId, { title: newTitle });
 };
 
-// Execute attacks with real-time updates
 const executeAttacks = async () => {
   if (!canExecuteAttack.value) return;
 
@@ -620,7 +578,6 @@ const executeAttacks = async () => {
   selectedResult.value = undefined; // Clear previous selection
 
   try {
-    // Build custom headers object
     const headersObj: Record<string, string> = {};
     customHeaders.value.forEach((header) => {
       if (header.name.trim() !== "" && header.value.trim() !== "") {
@@ -628,7 +585,6 @@ const executeAttacks = async () => {
       }
     });
 
-    // Extract original headers from selected request if using request mode
     let originalHeaders: Record<string, string> | undefined = undefined;
     let useOriginalHeaders = false;
 
@@ -638,20 +594,18 @@ const executeAttacks = async () => {
       selectedRequest.value.raw !== undefined &&
       selectedRequest.value.raw !== ""
     ) {
-      // Parse headers from raw HTTP request
       useOriginalHeaders = true;
       originalHeaders = {};
 
       try {
         const raw = selectedRequest.value.raw;
-        // HTTP uses \r\n line endings - handle both \r\n and \n
+
         const lines = raw.split(/\r?\n/);
         let inHeaders = false;
 
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           if (line === undefined || line === "") {
-            // Empty line signals end of headers
             if (inHeaders) break;
             continue;
           }
@@ -659,13 +613,11 @@ const executeAttacks = async () => {
           const trimmedLine = line.trim();
 
           if (i === 0) {
-            // First line is the request line (GET /path HTTP/1.1)
             inHeaders = true;
             continue;
           }
 
           if (inHeaders && trimmedLine === "") {
-            // Empty line signals end of headers
             break;
           }
 
@@ -674,7 +626,6 @@ const executeAttacks = async () => {
             const headerName = trimmedLine.substring(0, colonIndex).trim();
             const headerValue = trimmedLine.substring(colonIndex + 1).trim();
             if (headerName !== "" && headerValue !== "") {
-              // Exclude Content-Length as it will be recalculated
               if (headerName.toLowerCase() !== "content-length") {
                 originalHeaders[headerName] = headerValue;
               }
@@ -682,7 +633,6 @@ const executeAttacks = async () => {
           }
         }
       } catch (error) {
-        // If parsing fails, fall back to no headers
         originalHeaders = undefined;
         useOriginalHeaders = false;
       }
@@ -708,7 +658,6 @@ const executeAttacks = async () => {
         : undefined,
     };
 
-    // Start attacks
     const sessionResult = await sdk.backend.startGraphQLAttacks(config);
 
     if (sessionResult.kind === "Error") {
@@ -722,7 +671,6 @@ const executeAttacks = async () => {
 
     currentAttackSessionId.value = sessionResult.value;
 
-    // Update existing session if it's a "New Attack Session", otherwise create new one
     const currentSession = selectedAttackSession.value;
     let attackSession: AttackSession;
 
@@ -731,14 +679,12 @@ const executeAttacks = async () => {
       currentSession.title === "New Attack Session" &&
       currentSession.status === "pending"
     ) {
-      // Update the existing "New Attack Session" tab with actual data
       let domain = "Unknown";
       try {
         if (config.targetUrl) {
           domain = new URL(config.targetUrl).hostname;
         }
       } catch (error) {
-        // If URL parsing fails, use "Unknown"
         domain = "Unknown";
       }
       attackSession = {
@@ -749,7 +695,6 @@ const executeAttacks = async () => {
         status: "running",
       };
 
-      // Update the session in the array
       const sessionIndex = attackSessions.value.findIndex(
         (s) => s.id === currentSession.id,
       );
@@ -757,7 +702,6 @@ const executeAttacks = async () => {
         attackSessions.value[sessionIndex] = attackSession;
       }
     } else {
-      // Create new attack session and add to tabs
       attackSession = createAttackSession(config);
       attackSessions.value.unshift(attackSession); // Add to beginning
       selectedAttackSessionId.value = attackSession.id;
@@ -765,21 +709,17 @@ const executeAttacks = async () => {
 
     currentActiveAttackId.value = attackSession.id;
 
-    // Clear results since we're starting a new attack
     attackResults.value = [];
     selectedResult.value = undefined;
 
-    // Save attack sessions
     await saveAttackSessions();
 
-    // Add activity to dashboard
     await activityService.addAttackActivity(
       config.targetUrl,
       config.attackTypes,
       attackSession.id,
     );
 
-    // Start background attack service
     backgroundAttackService.startBackgroundAttack(
       sessionResult.value,
       config.attackTypes,
@@ -792,9 +732,6 @@ const executeAttacks = async () => {
   }
 };
 
-// Start polling for attack status updates - removed unused function
-
-// Stop polling
 const stopAttackPolling = () => {
   if (pollInterval.value !== undefined) {
     clearInterval(pollInterval.value);
@@ -802,27 +739,23 @@ const stopAttackPolling = () => {
   }
 };
 
-// Cancel attack execution
 const cancelAttack = async () => {
   attackCancelled.value = true;
   isAttacking.value = false;
   attackProgress.value = 0;
 
-  // Cancel backend attack session if we have one
   if (currentAttackSessionId.value !== undefined) {
     try {
       await sdk.backend.cancelAttackSession(currentAttackSessionId.value);
     } catch (error) {
-      // Even if backend cancel fails, continue with frontend cleanup
+      void 0;
     }
   }
 
-  // Stop background attack service
   backgroundAttackService.stopBackgroundAttack();
 
   stopAttackPolling();
 
-  // Update any running attack session to cancelled status
   if (currentActiveAttackId.value !== undefined) {
     updateAttackSession(currentActiveAttackId.value, {
       status: "cancelled",
@@ -831,31 +764,26 @@ const cancelAttack = async () => {
     currentActiveAttackId.value = undefined;
   }
 
-  // Clear all attack-related state
   currentAttackSessionId.value = undefined;
 
-  // Save the updated sessions to persist the cancellation
   await saveAttackSessions();
 
   sdk.window.showToast("Attack cancelled", { variant: "info" });
 };
 
-// Select result for detailed view
 const selectResult = (result: AttackResult) => {
   selectedResult.value = result;
-  // Reset expansion states when selecting new result
+
   payloadExpanded.value = false;
   responseExpanded.value = false;
-  // Always reset to Request/Response tab (index 0) when selecting a new result
+
   activeResultTab.value = 0;
 
-  // Force refresh editors on every selection
   nextTick(() => {
     mountSDKEditors();
   });
 };
 
-// Simple SDK editors
 type EditorView =
   | {
       dispatch: (changes: {
@@ -898,7 +826,6 @@ const mountSDKEditors = async () => {
 
   await nextTick();
 
-  // Cleanup existing editors
   if (requestEditor.value !== undefined && requestEditor.value !== null) {
     try {
       if (
@@ -909,7 +836,7 @@ const mountSDKEditors = async () => {
         requestEditor.value.destroy();
       }
     } catch (e) {
-      // Ignore cleanup errors
+      void 0;
     }
     requestEditor.value = undefined;
     requestEditorView = undefined;
@@ -924,13 +851,12 @@ const mountSDKEditors = async () => {
         responseEditor.value.destroy();
       }
     } catch (e) {
-      // Ignore cleanup errors
+      void 0;
     }
     responseEditor.value = undefined;
     responseEditorView = undefined;
   }
 
-  // Mount request editor
   if (requestContainer) {
     try {
       if (selectedResult.value.rawRequest !== undefined) {
@@ -938,7 +864,6 @@ const mountSDKEditors = async () => {
         const editor = sdk.ui.httpRequestEditor();
         const editorElement = editor.getElement();
 
-        // Apply proper height constraint
         editorElement.style.height = "100%";
 
         requestContainer.appendChild(editorElement);
@@ -955,7 +880,6 @@ const mountSDKEditors = async () => {
     }
   }
 
-  // Mount response editor
   if (responseContainer) {
     try {
       if (
@@ -966,7 +890,6 @@ const mountSDKEditors = async () => {
         const editor = sdk.ui.httpResponseEditor();
         const editorElement = editor.getElement();
 
-        // Apply proper height constraint
         editorElement.style.height = "100%";
 
         responseContainer.appendChild(editorElement);
@@ -987,7 +910,6 @@ const mountSDKEditors = async () => {
   }
 };
 
-// Watch for result changes
 watch(
   selectedResult,
   () => {
@@ -998,13 +920,11 @@ watch(
   { immediate: true },
 );
 
-// Clear all results
 const clearResults = () => {
   attackResults.value = [];
   selectedResult.value = undefined;
 };
 
-// Create Caido finding manually
 const createCaidoFinding = async (
   finding: AttackResult["findings"][number],
 ) => {
@@ -1023,7 +943,6 @@ const createCaidoFinding = async (
       return;
     }
 
-    // Pass request ID for finding creation
     const result = await sdk.backend.createCaidoFinding(
       finding,
       selectedResult.value.requestId,
@@ -1046,7 +965,6 @@ const createCaidoFinding = async (
   }
 };
 
-// Create finding from table action button
 const createFindingFromResult = async (result: AttackResult) => {
   if (result.findings.length === 0) {
     sdk.window.showToast("No findings available to create", {
@@ -1055,7 +973,6 @@ const createFindingFromResult = async (result: AttackResult) => {
     return;
   }
 
-  // If multiple findings, create the highest severity one
   const sortedFindings = result.findings.sort((a, b) => {
     const severityOrder = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
     return (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0);
@@ -1099,7 +1016,6 @@ const createFindingFromResult = async (result: AttackResult) => {
   }
 };
 
-// Send to replay session
 const sendToReplay = async (result: AttackResult) => {
   try {
     if (result.rawRequest === undefined || result.rawRequest === "") {
@@ -1109,7 +1025,6 @@ const sendToReplay = async (result: AttackResult) => {
       return;
     }
 
-    // Extract domain from target URL for collection naming
     let domain = "Unknown";
     try {
       if (result.targetUrl) {
@@ -1117,11 +1032,9 @@ const sendToReplay = async (result: AttackResult) => {
         domain = url.hostname;
       }
     } catch (error) {
-      // If URL parsing fails, use "Unknown"
       domain = "Unknown";
     }
 
-    // Create replay session using the service
     const replayResult = await replayService.createReplayFromRequest(
       result.rawRequest,
       domain,
@@ -1145,7 +1058,6 @@ const sendToReplay = async (result: AttackResult) => {
   }
 };
 
-// Helper to get finding severity class
 const getFindingSeverityClass = (findings: AttackResult["findings"]) => {
   if (findings.some((f) => f.severity === "critical"))
     return "bg-red-600 text-red-100";
@@ -1158,14 +1070,12 @@ const getFindingSeverityClass = (findings: AttackResult["findings"]) => {
   return "bg-gray-500 text-gray-100";
 };
 
-// Helper to get attack type label
 const getAttackTypeLabel = (attackType: string) => {
   return (
     availableAttacks.find((a) => a.value === attackType)?.label ?? attackType
   );
 };
 
-// Helper to format dates
 const formatDate = (date: Date): string => {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -1187,14 +1097,12 @@ onMounted(() => {
   loadSessions();
   loadAttackSessions();
 
-  // Check for dashboard navigation to specific attack session
   const attackSessionId = localStorage.getItem(
     "graphql-analyzer-navigate-to-attack",
   );
   if (attackSessionId !== null && attackSessionId !== "") {
     localStorage.removeItem("graphql-analyzer-navigate-to-attack");
 
-    // Wait for attack sessions to load, then select the specified one
     nextTick(() => {
       if (attackSessions.value.some((s) => s.id === attackSessionId)) {
         selectAttackSession(attackSessionId);
@@ -1205,7 +1113,6 @@ onMounted(() => {
     });
   }
 
-  // Check for pending context attack request
   const storedRequest = localStorage.getItem(
     "graphql-analyzer-context-attack-request",
   );
@@ -1217,7 +1124,6 @@ onMounted(() => {
       useCustomUrl.value = false;
       selectedSessionId.value = undefined;
 
-      // Parse and populate custom headers from the request
       if (
         requestData.raw !== undefined &&
         requestData.raw !== null &&
@@ -1265,7 +1171,6 @@ onMounted(() => {
             }
           }
 
-          // Populate custom headers array
           if (Object.keys(extractedHeaders).length > 0) {
             customHeaders.value = [];
             Object.entries(extractedHeaders).forEach(([key, value]) => {
@@ -1273,26 +1178,21 @@ onMounted(() => {
             });
           }
         } catch (error) {
-          // If parsing fails, continue without headers
+          void 0;
         }
       }
 
-      // Clean up localStorage
       localStorage.removeItem("graphql-analyzer-context-attack-request");
 
-      // Automatically create a new attack session for this request
       createNewAttackSession(false);
     } catch (error) {
-      // Invalid JSON, just remove it
       localStorage.removeItem("graphql-analyzer-context-attack-request");
     }
   }
 
-  // Check for background attacks on mount and restore state
   if (backgroundAttackService.hasBackgroundAttack()) {
     const attackInfo = backgroundAttackService.getBackgroundAttackInfo();
     if (attackInfo) {
-      // Find the corresponding attack session
       nextTick(() => {
         const attackSession = attackSessions.value.find(
           (s) =>
@@ -1302,25 +1202,19 @@ onMounted(() => {
         );
 
         if (attackSession) {
-          // Restore attack state
           isAttacking.value = true;
           currentAttackSessionId.value = attackInfo.sessionId;
           currentActiveAttackId.value = attackSession.id;
           selectedAttackSessionId.value = attackSession.id;
 
-          // Restore attack results
           attackResults.value = attackSession.results;
-
-          // Silently resume background attack
         } else {
-          // No corresponding session found, stop background attack
           backgroundAttackService.stopBackgroundAttack();
         }
       });
     }
   }
 
-  // Listen for context attack events
   const handleContextAttack = (event: CustomEvent) => {
     const requestData = event.detail.request as SelectedRequest | undefined;
     if (requestData !== undefined) {
@@ -1329,7 +1223,6 @@ onMounted(() => {
       useCustomUrl.value = false;
       selectedSessionId.value = undefined;
 
-      // Parse and populate custom headers from the request
       if (
         requestData.raw !== undefined &&
         requestData.raw !== null &&
@@ -1377,7 +1270,6 @@ onMounted(() => {
             }
           }
 
-          // Populate custom headers array
           if (Object.keys(extractedHeaders).length > 0) {
             customHeaders.value = [];
             Object.entries(extractedHeaders).forEach(([key, value]) => {
@@ -1385,27 +1277,21 @@ onMounted(() => {
             });
           }
         } catch (error) {
-          // If parsing fails, continue without headers
+          void 0;
         }
       }
 
-      // Automatically create a new attack session for this request
       createNewAttackSession(false);
-
-      // No toast needed - action speaks for itself
     }
   };
 
-  // Listen for background attack progress events
   const handleAttackProgress = (event: CustomEvent) => {
     const { sessionId, status, progress, results } = event.detail;
 
-    // Only update if this is our current attack session
     if (sessionId === currentAttackSessionId.value) {
       attackProgress.value = progress;
       attackResults.value = results;
 
-      // Update attack session with current results
       if (currentActiveAttackId.value !== undefined) {
         updateAttackSession(currentActiveAttackId.value, {
           results: results,
@@ -1413,12 +1299,10 @@ onMounted(() => {
         });
       }
 
-      // Update isAttacking state based on completion
       if (status.isComplete === true) {
         isAttacking.value = false;
         attackProgress.value = 100;
 
-        // Calculate findings for the session
         const totalFindings = results.reduce(
           (sum: number, r: AttackResult) => sum + r.findings.length,
           0,
@@ -1432,7 +1316,6 @@ onMounted(() => {
           0,
         );
 
-        // Update session with completion data
         if (currentActiveAttackId.value !== undefined) {
           updateAttackSession(currentActiveAttackId.value, {
             completedAt: new Date(),
@@ -1453,16 +1336,13 @@ onMounted(() => {
     }
   };
 
-  // Listen for background attack completion events
   const handleAttackComplete = (event: CustomEvent) => {
     const { sessionId, totalFindings, criticalFindings } = event.detail;
 
-    // Only update if this is our current attack session
     if (sessionId === currentAttackSessionId.value) {
       isAttacking.value = false;
       attackProgress.value = 100;
 
-      // Update session with final completion data
       if (currentActiveAttackId.value !== undefined) {
         updateAttackSession(currentActiveAttackId.value, {
           completedAt: new Date(),
@@ -1488,7 +1368,6 @@ onMounted(() => {
     handleAttackComplete as EventListener,
   );
 
-  // Store cleanup function for later use
   const eventCleanup = () => {
     window.removeEventListener(
       "graphql-analyzer-context-attack",
@@ -1504,7 +1383,6 @@ onMounted(() => {
     );
   };
 
-  // Add to global cleanup
   type WindowWithCleanup = Window & {
     eventCleanup?: () => void;
   };
@@ -1512,10 +1390,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  // Cleanup polling
   stopAttackPolling();
 
-  // Cleanup event listeners
   type WindowWithCleanup = Window & {
     eventCleanup?: () => void;
   };
@@ -1525,10 +1401,6 @@ onUnmounted(() => {
     delete windowWithCleanup.eventCleanup;
   }
 
-  // Note: Don't stop background attacks here - they should continue running
-  // Background attacks will continue even when user navigates away
-
-  // Cleanup SDK editors
   if (requestEditor.value) {
     requestEditor.value.destroy?.();
   }

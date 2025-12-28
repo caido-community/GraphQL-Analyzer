@@ -30,8 +30,8 @@ export const useSessions = () => {
         (sdk.storage.get() as Record<string, unknown>) ?? {};
       currentStorage.explorerSessions = sessions.value;
       currentStorage.selectedExplorerSessionId = selectedSessionId.value;
-      // @ts-expect-error - SDK storage.set accepts any object
-      await sdk.storage.set(currentStorage);
+
+      await sdk.storage.set(currentStorage as unknown as Record<string, never>);
     } catch (error) {
       sdk.window.showToast("Failed to save session data", { variant: "error" });
     }
@@ -114,8 +114,8 @@ export const useSessions = () => {
         (sdk.storage.get() as Record<string, unknown>) ?? {};
       currentStorage.explorerSessions = [];
       currentStorage.selectedExplorerSessionId = undefined;
-      // @ts-expect-error - SDK storage.set accepts any object
-      await sdk.storage.set(currentStorage);
+
+      await sdk.storage.set(currentStorage as unknown as Record<string, never>);
       sdk.window.showToast("All sessions and data cleared successfully", {
         variant: "success",
       });

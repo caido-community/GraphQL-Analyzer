@@ -12,24 +12,20 @@ const props = defineProps<{
   request: RequestFull;
 }>();
 
-// Reactive state for viewing GraphQL data
 const editableQuery = ref("");
 const editableVariables = ref("{}");
 const queryValidationErrors = ref<string[]>([]);
 const activeTab = ref(0);
 
-// Parse HTTP raw data
 const parseHttpRaw = (raw: string) => {
   if (raw === undefined || raw === "") return null;
 
-  // Split by double CRLF to separate headers from body
   const parts = raw.split("\r\n\r\n");
   if (parts.length < 2) return null;
 
   const headerSection = parts[0];
-  const body = parts.slice(1).join("\r\n\r\n"); // Rejoin in case body contains \r\n\r\n
+  const body = parts.slice(1).join("\r\n\r\n");
 
-  // Parse the first line to get method
   const lines = headerSection?.split("\r\n") ?? [];
   const firstLine = lines[0];
   const methodMatch =
@@ -39,7 +35,6 @@ const parseHttpRaw = (raw: string) => {
       ? methodMatch[1]
       : "UNKNOWN";
 
-  // Parse headers
   const headers: Record<string, string> = {};
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
@@ -67,7 +62,6 @@ const graphqlData = computed(() => {
     return null;
   }
 
-  // Try to parse body as JSON and look for GraphQL structure
   try {
     const bodyJson = JSON.parse(parsed.body) as {
       query?: string;
@@ -78,7 +72,6 @@ const graphqlData = computed(() => {
       return bodyJson;
     }
   } catch {
-    // If not JSON, check if it's raw GraphQL
     if (/\b(query|mutation|subscription)\s*[{[]/.test(parsed.body)) {
       return { query: parsed.body };
     }
@@ -87,28 +80,23 @@ const graphqlData = computed(() => {
   return null;
 });
 
-// Check if this request actually contains GraphQL data
 const isActuallyGraphQL = computed(() => {
-  // Also check if method is POST (GraphQL standard)
   const parsed = parsedHttp.value;
   if (!parsed) return false;
 
   return parsed.method === "POST" && graphqlData.value !== null;
 });
 
-// Enhanced GraphQL formatting with proper AST parsing
 const formatGraphQLQuery = (query: string): string => {
   if (!query) return "";
 
   try {
-    // FIRST: Strip comment lines (lines starting with #) BEFORE formatting
     const strippedQuery = query
       .split("\n")
       .filter((line) => !line.trim().startsWith("#"))
       .join("\n")
       .trim();
 
-    // More sophisticated GraphQL formatting
     let formatted = strippedQuery
       .replace(/\s+/g, " ")
       .replace(/\{\s*/g, " {\n  ")
@@ -119,7 +107,6 @@ const formatGraphQLQuery = (query: string): string => {
       .replace(/:\s*/g, ": ")
       .trim();
 
-    // Fix indentation with proper nesting
     const lines = formatted.split("\n");
     let indentLevel = 0;
     const indentedLines = lines.map((line) => {
@@ -132,13 +119,11 @@ const formatGraphQLQuery = (query: string): string => {
 
     return indentedLines.join("\n");
   } catch (error) {
-    return query; // Return original on error
+    return query;
   }
 };
 
-// Initialize editable content
 onMounted(() => {
-  // Initialize query
   if (graphqlData.value?.query !== undefined) {
     const formatted = formatGraphQLQuery(graphqlData.value.query);
     editableQuery.value = formatted;
@@ -146,7 +131,6 @@ onMounted(() => {
     editableQuery.value = "";
   }
 
-  // Initialize variables
   if (graphqlData.value?.variables !== undefined) {
     if (graphqlData.value.variables === null) {
       editableVariables.value = "null";
@@ -161,13 +145,11 @@ onMounted(() => {
     editableVariables.value = "{}";
   }
 
-  // Auto-validate on mount
   if (editableQuery.value) {
     queryValidationErrors.value = validateQuery(editableQuery.value);
   }
 });
 
-// Advanced GraphQL validation
 const validateQuery = (query: string): string[] => {
   const errors: string[] = [];
 
@@ -176,19 +158,16 @@ const validateQuery = (query: string): string[] => {
     return errors;
   }
 
-  // Strip comment lines (lines starting with #)
   const strippedQuery = query
     .split("\n")
     .filter((line) => !line.trim().startsWith("#"))
     .join("\n")
     .trim();
 
-  // If nothing left after stripping comments, no validation needed
   if (!strippedQuery) {
     return errors;
   }
 
-  // Basic syntax validation on stripped query
   const openBraces = (strippedQuery.match(/\{/g) || []).length;
   const closeBraces = (strippedQuery.match(/\}/g) || []).length;
 
@@ -196,7 +175,6 @@ const validateQuery = (query: string): string[] => {
     errors.push("Mismatched braces in query");
   }
 
-  // Check for valid operation types on stripped query
   const hasValidOperation =
     /^\s*(query|mutation|subscription)\s+/i.test(strippedQuery) ||
     /^\s*\{/.test(strippedQuery);
@@ -208,7 +186,6 @@ const validateQuery = (query: string): string[] => {
   return errors;
 };
 
-// Parse GraphQL query to extract field information with better type detection
 const parseQueryFields = (query: string) => {
   const fields: Array<{ name: string; type: string; description?: string }> =
     [];
@@ -283,7 +260,6 @@ const isImportantHeader = (headerName: string): boolean => {
   ].some((important) => name.includes(important));
 };
 
-// Check if any important headers exist
 const hasImportantHeaders = computed(() => {
   if (!parsedHttp.value?.headers) return false;
   return Object.keys(parsedHttp.value.headers).some((key) =>
@@ -291,7 +267,6 @@ const hasImportantHeaders = computed(() => {
   );
 });
 
-// Copy query to clipboard
 const copyQuery = async () => {
   try {
     if (!editableQuery.value || editableQuery.value.trim() === "") {
@@ -316,7 +291,6 @@ const saveToScanner = () => {
       ? ""
       : `:${props.request.port}`;
   let graphqlUrl = `${protocol}://${props.request.host}${portPart}${props.request.path}`;
-  // protocol and portPart are used in graphqlUrl construction above
 
   if (!graphqlUrl.toLowerCase().includes("graphql")) {
     graphqlUrl = `${protocol}://${props.request.host}${portPart}/graphql`;

@@ -4,10 +4,6 @@ export type Result<T> =
   | { kind: "Ok"; value: T }
   | { kind: "Error"; error: string };
 
-/**
- * GraphQL Replay Service
- * Creates replay sessions and collections for GraphQL requests
- */
 type RequestSpec = {
   method: string;
   host: string;
@@ -22,31 +18,24 @@ type RequestSpec = {
 
 export class GraphQLReplayService {
   private sdk: FrontendSDK;
-  private collections: Map<string, string> = new Map(); // domain -> collection name
+  private collections: Map<string, string> = new Map();
 
   constructor(sdk: FrontendSDK) {
     this.sdk = sdk;
   }
 
-  /**
-   * Creates a replay session from raw HTTP request
-   * Automatically creates domain-based collections
-   */
   async createReplayFromRequest(
     rawRequest: string,
     domain: string,
   ): Promise<Result<{ collectionName: string; sessionName: string }>> {
     try {
-      // Parse the raw HTTP request
       const parsedRequest = this.parseRawHttpRequest(rawRequest);
       if (parsedRequest === null) {
         return { kind: "Error", error: "Failed to parse HTTP request" };
       }
 
-      // Get or create collection for this domain
       const collectionName = this.getOrCreateCollection(domain);
 
-      // Generate session name
       if (parsedRequest === undefined) {
         return {
           kind: "Error",
@@ -55,7 +44,6 @@ export class GraphQLReplayService {
       }
       const sessionName = this.generateSessionName(parsedRequest);
 
-      // Create RequestSpec from parsed request
       const requestSpec = this.buildRequestSpec(parsedRequest);
       if (requestSpec === undefined) {
         return {
@@ -64,8 +52,6 @@ export class GraphQLReplayService {
         };
       }
 
-      // Send to Caido Replay (using the SDK)
-      // Note: This will need to be implemented based on Caido's actual replay SDK
       await this.sendToReplay(requestSpec, collectionName, sessionName);
 
       return {
@@ -83,24 +69,16 @@ export class GraphQLReplayService {
     }
   }
 
-  /**
-   * Gets existing collection or creates new one for domain
-   */
   private getOrCreateCollection(domain: string): string {
     const collectionName = `GraphQL - ${domain}`;
 
     if (!this.collections.has(domain)) {
       this.collections.set(domain, collectionName);
-      // Here we would create the actual collection in Caido
-      // For now, we just track it locally
     }
 
     return collectionName;
   }
 
-  /**
-   * Parses raw HTTP request into structured data
-   */
   private parseRawHttpRequest(
     rawRequest: string,
   ): ParsedHttpRequest | undefined {
@@ -108,7 +86,6 @@ export class GraphQLReplayService {
       const lines = rawRequest.split("\n");
       if (lines.length === 0) return undefined;
 
-      // Parse request line
       const requestLine = lines[0]?.trim();
       if (requestLine === undefined || requestLine === "") return undefined;
       const parts = requestLine.split(" ");
@@ -117,7 +94,6 @@ export class GraphQLReplayService {
       const protocol = parts[2];
       if (method === undefined || path === undefined) return undefined;
 
-      // Parse headers
       const headers: Record<string, string> = {};
       let bodyStartIndex = -1;
 
@@ -138,19 +114,16 @@ export class GraphQLReplayService {
         }
       }
 
-      // Extract body
       let body = "";
       if (bodyStartIndex > 0 && bodyStartIndex < lines.length) {
         body = lines.slice(bodyStartIndex).join("\n").trim();
       }
 
-      // Extract host and determine if TLS
       const host = headers["Host"] ?? headers["host"] ?? "localhost";
       const tls =
         (protocol !== undefined && protocol.includes("HTTPS")) ||
         headers["X-Forwarded-Proto"] === "https";
 
-      // Determine port
       let port = 80;
       if (tls === true) port = 443;
       if (host.includes(":")) {
@@ -165,7 +138,7 @@ export class GraphQLReplayService {
       return {
         method: method.toUpperCase(),
         path: path ?? "/",
-        host: host.split(":")[0] ?? "localhost", // Remove port from host
+        host: host.split(":")[0] ?? "localhost",
         port,
         tls,
         headers,
@@ -177,14 +150,10 @@ export class GraphQLReplayService {
     }
   }
 
-  /**
-   * Builds Caido RequestSpec from parsed request
-   */
   private buildRequestSpec(
     parsedRequest: ParsedHttpRequest,
   ): RequestSpec | undefined {
     try {
-      // Build URL
       const protocol = parsedRequest.tls === true ? "https" : "http";
       const portStr =
         (parsedRequest.tls === true && parsedRequest.port === 443) ||
@@ -193,7 +162,6 @@ export class GraphQLReplayService {
           : `:${parsedRequest.port}`;
       const url = `${protocol}://${parsedRequest.host}${portStr}${parsedRequest.path}`;
 
-      // Extract query parameters from path
       const [pathname, queryString] = parsedRequest.path.split("?");
 
       return {
@@ -212,24 +180,17 @@ export class GraphQLReplayService {
     }
   }
 
-  /**
-   * Generates session name from parsed request
-   */
   private generateSessionName(parsedRequest: ParsedHttpRequest): string {
-    const path = parsedRequest.path.split("?")[0]; // Remove query params
+    const path = parsedRequest.path.split("?")[0];
     return `${parsedRequest.method} ${path}`;
   }
 
-  /**
-   * Sends request to Caido Replay system using real Caido SDK
-   */
   private async sendToReplay(
     requestSpec: RequestSpec,
     collectionName: string,
     sessionName: string,
   ): Promise<void> {
     try {
-      // Step 1: Check if collection exists, create if not
       let collectionId: string | undefined;
 
       try {
@@ -240,10 +201,9 @@ export class GraphQLReplayService {
         );
         collectionId = existingCollection?.id;
       } catch (error) {
-        // If replay.getCollections() fails, we'll create a new collection anyway
+        void 0;
       }
 
-      // Step 2: Create collection if it doesn't exist
       if (collectionId === undefined) {
         const createCollectionResult =
           await this.sdk.graphql.createReplaySessionCollection({
@@ -259,10 +219,8 @@ export class GraphQLReplayService {
         }
       }
 
-      // Step 3: Build raw HTTP request from spec
       const rawRequest = this.buildRawHttpRequest(requestSpec);
 
-      // Step 4: Create replay session
       const createSessionResult = await this.sdk.graphql.createReplaySession({
         input: {
           requestSource: {
@@ -283,7 +241,6 @@ export class GraphQLReplayService {
         throw new Error("Failed to create replay session");
       }
 
-      // Step 5: Move session to collection
       try {
         type ReplaySDK = {
           moveSession?: (
@@ -296,17 +253,16 @@ export class GraphQLReplayService {
           await replaySDK.moveSession(sessionId, collectionId);
         }
       } catch (moveError) {
-        // Non-fatal, session still created
+        void 0;
       }
 
-      // Step 6: Rename session
       try {
         await this.sdk.graphql.renameReplaySession({
           id: sessionId,
           name: sessionName,
         });
       } catch (renameError) {
-        // Non-fatal, session still created
+        void 0;
       }
     } catch (error) {
       throw new Error(
@@ -315,9 +271,6 @@ export class GraphQLReplayService {
     }
   }
 
-  /**
-   * Builds raw HTTP request string from request spec (like redocs does)
-   */
   private buildRawHttpRequest(spec: RequestSpec): string {
     try {
       const method = spec.method ?? "POST";
@@ -329,11 +282,9 @@ export class GraphQLReplayService {
       const body = spec.body ?? "";
       const isTls = spec.tls === true;
 
-      // Build request line
       const fullPath = path + query;
       let request = `${method} ${fullPath} HTTP/1.1\r\n`;
 
-      // Add Host header
       if (
         (isTls === true && port !== 443) ||
         (isTls === false && port !== 80)
@@ -343,37 +294,29 @@ export class GraphQLReplayService {
         request += `Host: ${host}\r\n`;
       }
 
-      // Add other headers
       for (const [name, value] of Object.entries(headers)) {
         if (name !== "" && value !== "" && name.toLowerCase() !== "host") {
           request += `${name}: ${value}\r\n`;
         }
       }
 
-      // Add Content-Length if there's a body
       if (typeof body === "string" && body.length > 0) {
         request += `Content-Length: ${body.length}\r\n`;
       }
 
-      // End headers
       request += "\r\n";
 
-      // Add body
       if (typeof body === "string" && body.length > 0) {
         request += body;
       }
 
       return request;
     } catch (error) {
-      // Fallback
       return `POST / HTTP/1.1\r\nHost: localhost\r\n\r\n`;
     }
   }
 }
 
-/**
- * Parsed HTTP Request structure
- */
 interface ParsedHttpRequest {
   method: string;
   path: string;
@@ -385,9 +328,6 @@ interface ParsedHttpRequest {
   protocol: string;
 }
 
-/**
- * Create and export singleton instance
- */
 let replayServiceInstance: GraphQLReplayService | undefined = undefined;
 
 export function createReplayService(sdk: FrontendSDK): GraphQLReplayService {

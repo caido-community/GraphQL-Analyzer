@@ -40,7 +40,6 @@ const handleNavigationEvent = (event: CustomEvent) => {
   }
 };
 
-// Handle navigation events from context menus
 const checkPendingNavigation = () => {
   const pendingNav = localStorage.getItem("graphql-analyzer-navigate-to");
   const navTimestamp = localStorage.getItem(

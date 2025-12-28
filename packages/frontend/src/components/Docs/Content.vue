@@ -5,7 +5,6 @@ import { useSDK } from "@/plugins/sdk";
 
 const sdk = useSDK();
 
-// Copy functions for footer
 const copyToClipboard = async (text: string, successMessage: string) => {
   try {
     await navigator.clipboard.writeText(text);

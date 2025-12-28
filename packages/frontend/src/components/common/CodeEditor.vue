@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
-// @codemirror/search is not installed, using alternative
-// import {
-//   highlightSelectionMatches,
-//   search,
-//   searchKeymap,
-// } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { lineNumbers } from "@codemirror/view";
@@ -33,7 +27,7 @@ const getLanguageExtension = () => {
       return json();
     case "javascript":
     case "graphql":
-      return javascript(); // Use JavaScript highlighting for GraphQL (good enough)
+      return javascript();
     default:
       return javascript();
   }
@@ -49,11 +43,7 @@ const createEditor = () => {
   const extensions = [
     getLanguageExtension(),
     oneDark,
-    lineNumbers(), // Add line numbers
-    // Search functionality removed - @codemirror/search not installed
-    // search(), // Add search extension
-    // highlightSelectionMatches(), // Highlight matching text selections
-    // keymap.of(searchKeymap), // Add search functionality (Ctrl+F)
+    lineNumbers(),
     EditorView.theme({
       "&": {
         fontSize: `${props.fontSize ?? 14}px`,
@@ -86,7 +76,6 @@ const createEditor = () => {
         backgroundColor: "transparent",
         borderRight: "1px solid #374151",
       },
-      // Search panel styling
       ".cm-search": {
         backgroundColor: "#1f2937",
         border: "1px solid #374151",

@@ -11,16 +11,13 @@ import GraphQLViewMode from "./views/GraphQLViewMode.vue";
 export const init = (sdk: FrontendSDK) => {
   const app = createApp(App);
 
-  // Load the PrimeVue component library
   app.use(PrimeVue, {
     unstyled: true,
     pt: Classic,
   });
 
-  // Provide the FrontendSDK
   app.use(SDKPlugin, sdk);
 
-  // Create the root element for the app
   const root = document.createElement("div");
   Object.assign(root.style, {
     height: "100%",
@@ -29,20 +26,16 @@ export const init = (sdk: FrontendSDK) => {
 
   root.id = `plugin--graphql-analyzer`;
 
-  // Mount the app to the root element
   app.mount(root);
 
-  // Add the page to the navigation
   sdk.navigation.addPage("/graphql-analyzer", {
     body: root,
   });
 
-  // Add a sidebar item
   sdk.sidebar.registerItem("GraphQL Analyzer", "/graphql-analyzer", {
     icon: "fas fa-project-diagram",
   });
 
-  // Register the GraphQL request view mode in HTTP History
   sdk.httpHistory.addRequestViewMode({
     label: "GraphQL",
     view: {
@@ -50,7 +43,6 @@ export const init = (sdk: FrontendSDK) => {
     },
   });
 
-  // Register the GraphQL request view mode in Replay
   try {
     type ReplaySDK = {
       addRequestViewMode?: (config: {
@@ -66,10 +58,9 @@ export const init = (sdk: FrontendSDK) => {
       },
     });
   } catch {
-    // Method may not be available
+    void 0;
   }
 
-  // Register the GraphQL request view mode in Search
   sdk.search.addRequestViewMode({
     label: "GraphQL",
     view: {
@@ -77,7 +68,6 @@ export const init = (sdk: FrontendSDK) => {
     },
   });
 
-  // Register the GraphQL request view mode in Sitemap
   sdk.sitemap.addRequestViewMode({
     label: "GraphQL",
     view: {
@@ -85,7 +75,6 @@ export const init = (sdk: FrontendSDK) => {
     },
   });
 
-  // Register context menu commands
   sdk.commands.register("graphql-analyzer-scan", {
     name: "Scan GraphQL Endpoint",
     run: (context) => {
@@ -111,13 +100,11 @@ export const init = (sdk: FrontendSDK) => {
         return;
       }
 
-      // Validate required properties with null checks
       if (requestData.host === undefined || requestData.port === undefined) {
         sdk.window.showToast("Invalid request data", { variant: "error" });
         return;
       }
 
-      // Build URL from basic properties with null safety
       const protocol = requestData.port === 443 ? "https" : "http";
       const portPart =
         requestData.port === 80 || requestData.port === 443
@@ -130,7 +117,6 @@ export const init = (sdk: FrontendSDK) => {
 
       let graphqlUrl = `${protocol}://${requestData.host}${portPart}${path}${queryString}`;
 
-      // Only modify URL if it doesn't contain 'graphql' AND has no query parameters
       if (!graphqlUrl.toLowerCase().includes("graphql") && queryString === "") {
         graphqlUrl = `${protocol}://${requestData.host}${portPart}/graphql`;
       }
@@ -186,7 +172,7 @@ export const init = (sdk: FrontendSDK) => {
             }
           }
         } catch (error) {
-          // Continue without headers
+          void 0;
         }
       }
 
@@ -226,7 +212,6 @@ export const init = (sdk: FrontendSDK) => {
     },
   });
 
-  // Register attack command
   sdk.commands.register("graphql-analyzer-attack", {
     name: "Attack GraphQL Endpoint",
     run: (context) => {
@@ -252,7 +237,6 @@ export const init = (sdk: FrontendSDK) => {
         return;
       }
 
-      // Validate required properties
       if (
         selectedRequest.host === undefined ||
         selectedRequest.port === undefined
@@ -278,11 +262,10 @@ export const init = (sdk: FrontendSDK) => {
           const rawData = selectedRequest.getRaw();
           rawString = rawData?.toText?.() ?? "";
         } catch (error) {
-          // Continue without raw data
+          void 0;
         }
       }
 
-      // Use direct property access for request data with null safety
       const requestData = {
         id: selectedRequest.id?.toString?.() ?? "",
         host: selectedRequest.host ?? "",
@@ -321,7 +304,6 @@ export const init = (sdk: FrontendSDK) => {
     },
   });
 
-  // Register context menu items
   sdk.menu.registerItem({
     type: "RequestRow",
     commandId: "graphql-analyzer-scan",
@@ -334,7 +316,6 @@ export const init = (sdk: FrontendSDK) => {
     leadingIcon: "fas fa-project-diagram",
   });
 
-  // Register attack context menu items
   sdk.menu.registerItem({
     type: "RequestRow",
     commandId: "graphql-analyzer-attack",

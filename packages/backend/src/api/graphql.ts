@@ -11,7 +11,6 @@ import type {
   Result,
 } from "shared";
 
-// Compatible introspection query (works with most GraphQL servers)
 const INTROSPECTION_QUERY = `
   query IntrospectionQuery {
     __schema {
@@ -108,7 +107,6 @@ export class GraphQLService {
     Result<{ supportsIntrospection: boolean; schema?: GraphQLSchema }>
   > {
     try {
-      // Ensure URL has protocol
       if (!url.startsWith("http://") && !url.startsWith("https://")) {
         return {
           kind: "Error",
@@ -116,11 +114,9 @@ export class GraphQLService {
         };
       }
 
-      // Extract host from URL for Host header
       let hostHeader = "";
       try {
         const parsedUrl = new URL(url);
-        // Include port in Host header if it's not default (80 for http, 443 for https)
         if (
           parsedUrl.port &&
           ((parsedUrl.protocol === "https:" && parsedUrl.port !== "443") ||
@@ -138,19 +134,15 @@ export class GraphQLService {
         return { kind: "Error", error: "Failed to extract host from URL" };
       }
 
-      // Build headers object - start fresh to ensure no null values
       const headers: Record<string, string> = {};
 
-      // Add required headers one by one with explicit string values
       headers["Host"] = String(hostHeader);
       headers["Content-Type"] = "application/json";
       headers["Accept"] = "application/json";
       headers["User-Agent"] = "Caido/GraphQL-Analyzer";
 
-      // Merge custom headers if provided (these override defaults)
       if (customHeaders && typeof customHeaders === "object") {
         Object.entries(customHeaders).forEach(([key, value]) => {
-          // Only add if both key and value are non-empty strings
           if (
             key &&
             value &&
@@ -159,12 +151,11 @@ export class GraphQLService {
             key.trim() &&
             value.trim()
           ) {
-            headers[key] = String(value); // Ensure it's a string
+            headers[key] = String(value);
           }
         });
       }
 
-      // Validate all headers are strings (final safety check)
       for (const [key, value] of Object.entries(headers)) {
         if (
           typeof value !== "string" ||
@@ -176,12 +167,10 @@ export class GraphQLService {
         }
       }
 
-      // Create request using Caido SDK (same as attacks service)
       const requestBody = JSON.stringify({
         query: INTROSPECTION_QUERY,
       });
 
-      // Ensure URL is valid string
       if (!url || typeof url !== "string") {
         return { kind: "Error", error: "Invalid URL" };
       }
@@ -189,7 +178,6 @@ export class GraphQLService {
       const spec = new RequestSpec(url);
       spec.setMethod("POST");
 
-      // Set all headers using SDK
       for (const [name, value] of Object.entries(headers)) {
         if (value) {
           spec.setHeader(name, value);
@@ -198,7 +186,6 @@ export class GraphQLService {
 
       spec.setBody(requestBody);
 
-      // Send request using Caido SDK (adds to HTTP History)
       const result = await this.sdk.requests.send(spec);
 
       if (result.response === undefined) {
@@ -211,7 +198,6 @@ export class GraphQLService {
       const statusCode = result.response.getCode();
       const responseBody = result.response.getBody()?.toText() ?? "";
 
-      // Check for authentication errors first
       if (statusCode === 401) {
         return {
           kind: "Error",
@@ -247,7 +233,6 @@ export class GraphQLService {
         };
       }
 
-      // Only check for obvious HTML if status is not 200
       if (statusCode !== 200) {
         const trimmed = responseBody.trim();
         if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
@@ -263,16 +248,13 @@ export class GraphQLService {
         };
       }
 
-      // For 200 responses, try to parse as JSON
       try {
         const jsonResponse = JSON.parse(responseBody);
 
-        // Check for errors in the GraphQL response
         if (
           Array.isArray(jsonResponse.errors) &&
           jsonResponse.errors.length > 0
         ) {
-          // Check if it's an introspection disabled error
           const introspectionDisabled = jsonResponse.errors.some(
             (error: { message?: string }) => {
               const message = error.message;
@@ -289,7 +271,6 @@ export class GraphQLService {
             return { kind: "Ok", value: { supportsIntrospection: false } };
           }
 
-          // Return the GraphQL errors
           const errorMessages = (
             jsonResponse.errors as Array<{ message?: string }>
           )
@@ -301,7 +282,6 @@ export class GraphQLService {
           };
         }
 
-        // Check for successful introspection
         if (
           jsonResponse.data !== undefined &&
           jsonResponse.data.__schema !== undefined
@@ -315,7 +295,6 @@ export class GraphQLService {
           return { kind: "Ok", value: { supportsIntrospection: true, schema } };
         }
 
-        // Response has data but no schema
         if (jsonResponse.data !== undefined) {
           return {
             kind: "Error",
@@ -324,14 +303,12 @@ export class GraphQLService {
           };
         }
 
-        // Valid JSON but not a GraphQL response
         return {
           kind: "Error",
           error:
             "Endpoint returned JSON but it's not a valid GraphQL response.",
         };
       } catch (parseError) {
-        // Failed to parse as JSON
         const preview = responseBody.substring(0, 100);
         return { kind: "Error", error: `Invalid JSON response: ${preview}...` };
       }
@@ -385,7 +362,6 @@ export class GraphQLService {
       pointsOfInterest: [],
     };
 
-    // Find root types
     const queryType = schemaData.types.find(
       (t) => t.name === schemaData.queryType?.name,
     );
@@ -396,31 +372,27 @@ export class GraphQLService {
       (t) => t.name === schemaData.subscriptionType?.name,
     );
 
-    // Parse queries - store BOTH processed AND raw data
     if (queryType?.fields && Array.isArray(queryType.fields)) {
       schema.queries = queryType.fields.map((field) => ({
         ...this.parseField(field),
-        rawIntrospectionData: field, // Store the complete raw field data
+        rawIntrospectionData: field,
       }));
     }
 
-    // Parse mutations - store BOTH processed AND raw data
     if (mutationType?.fields && Array.isArray(mutationType.fields)) {
       schema.mutations = mutationType.fields.map((field) => ({
         ...this.parseField(field),
-        rawIntrospectionData: field, // Store the complete raw field data
+        rawIntrospectionData: field,
       }));
     }
 
-    // Parse subscriptions - store BOTH processed AND raw data
     if (subscriptionType?.fields && Array.isArray(subscriptionType.fields)) {
       schema.subscriptions = subscriptionType.fields.map((field) => ({
         ...this.parseField(field),
-        rawIntrospectionData: field, // Store the complete raw field data
+        rawIntrospectionData: field,
       }));
     }
 
-    // Categorize all types (excluding built-in types)
     const customTypes = schemaData.types.filter(
       (t) => typeof t.name === "string" && !t.name.startsWith("__"),
     );
@@ -494,7 +466,6 @@ export class GraphQLService {
           break;
 
         case "SCALAR":
-          // Include custom scalars only (exclude built-ins)
           if (
             !["String", "Int", "Float", "Boolean", "ID"].includes(type.name)
           ) {
@@ -507,10 +478,8 @@ export class GraphQLService {
       }
     }
 
-    // Generate Points of Interest
     schema.pointsOfInterest = this.generatePointsOfInterest(schema);
 
-    // Store all types for query generation
     schema.allTypes = schemaData.types;
 
     return schema;
@@ -524,12 +493,12 @@ export class GraphQLService {
           name: arg.name,
           type: this.formatType(arg.type),
           defaultValue: arg.defaultValue,
-          rawType: arg.type, // Store raw type for query generation
+          rawType: arg.type,
         }))
       : [],
     type: this.formatType(field.type),
-    rawType: field.type, // Store raw type for query generation
-    rawField: field, // Store complete raw field data
+    rawType: field.type,
+    rawField: field,
   });
 
   private formatType = (type: IntrospectionTypeRef): string => {
@@ -545,7 +514,6 @@ export class GraphQLService {
   private generatePointsOfInterest(schema: GraphQLSchema): PointOfInterest[] {
     const points: PointOfInterest[] = [];
 
-    // Check for authentication-related fields
     const allFields = [
       ...schema.queries,
       ...schema.mutations,
@@ -553,7 +521,6 @@ export class GraphQLService {
     ];
 
     for (const field of allFields) {
-      // Authentication-related fields
       if (/auth|login|token|password|credential|session/i.test(field.name)) {
         points.push({
           name: field.name,
@@ -568,7 +535,6 @@ export class GraphQLService {
         });
       }
 
-      // Admin/privileged operations
       if (/admin|delete|remove|destroy|update.*user|manage/i.test(field.name)) {
         points.push({
           name: field.name,
@@ -583,7 +549,6 @@ export class GraphQLService {
         });
       }
 
-      // File/upload operations
       if (/upload|file|download|import|export/i.test(field.name)) {
         points.push({
           name: field.name,
@@ -600,7 +565,6 @@ export class GraphQLService {
       }
     }
 
-    // Check for sensitive field names in types
     for (const type of schema.types) {
       if (type.fields) {
         for (const field of type.fields) {
@@ -624,7 +588,6 @@ export class GraphQLService {
     return points;
   }
 
-  // Generate GraphQL query
   generateGraphQLQuery(
     field: GraphQLField & {
       rawType?: IntrospectionTypeRef;
@@ -638,17 +601,14 @@ export class GraphQLService {
     const capitalize = (str: string) =>
       str.charAt(0).toUpperCase() + str.slice(1);
 
-    // Add operation header with arguments
     const args = this.formatFieldArguments(field.args ?? []);
     lines.push(`${operationType} ${capitalize(field.name)}${args} {`);
 
-    // Add the field itself with nested fields
     lines.push(
       `  ${field.name}${this.formatQueryArguments(field.args ?? [])} {`,
     );
 
-    // Generate nested fields recursively
-    const visitedTypes = new Set<string>(); // Prevent infinite recursion
+    const visitedTypes = new Set<string>();
     const nestedFields = this.generateNestedFields(
       field.rawType || field.type,
       allTypes,
@@ -709,32 +669,26 @@ export class GraphQLService {
       return lines;
     }
 
-    // Unwrap the type (handle NON_NULL, LIST)
     const unwrappedType = this.unwrapType(type);
     if (unwrappedType === undefined || unwrappedType.name === undefined)
       return lines;
 
-    // Cycle detection - prevent infinite recursion
     if (
       unwrappedType.name !== undefined &&
       visitedTypes.has(unwrappedType.name)
     ) {
-      lines.push(`${indent}# Cycle detected for type: ${unwrappedType.name}`);
       return lines;
     }
 
-    // Find the type definition in allTypes
     const typeDefinition = unwrappedType.name
       ? allTypes.find((t) => t.name === unwrappedType.name)
       : undefined;
     if (!typeDefinition) return lines;
 
-    // Add this type to visited set
     if (unwrappedType.name) {
       visitedTypes.add(unwrappedType.name);
     }
 
-    // Handle different type kinds
     switch (typeDefinition.kind) {
       case "OBJECT":
       case "INTERFACE":
@@ -744,12 +698,9 @@ export class GraphQLService {
           typeDefinition.fields.length > 0
         ) {
           for (const field of typeDefinition.fields) {
-            // Show ALL fields - no limits!
             if (this.isScalarOrEnum(field.type, allTypes)) {
-              // Simple field
               lines.push(`${indent}${field.name}`);
             } else {
-              // Complex field - recurse
               lines.push(`${indent}${field.name} {`);
               const nestedFields = this.generateNestedFields(
                 field.type,
@@ -771,7 +722,6 @@ export class GraphQLService {
           Array.isArray(typeDefinition.possibleTypes)
         ) {
           for (const possibleType of typeDefinition.possibleTypes) {
-            // Show ALL possible types!
             const typeName = possibleType.name ?? "";
             if (typeName !== "") {
               lines.push(`${indent}... on ${typeName} {`);
@@ -792,11 +742,9 @@ export class GraphQLService {
 
       case "ENUM":
       case "SCALAR":
-        // These are leaf types, no nested fields
         break;
     }
 
-    // Remove from visited set to allow visiting in other branches
     if (unwrappedType.name) {
       visitedTypes.delete(unwrappedType.name);
     }
@@ -827,7 +775,6 @@ export class GraphQLService {
     return typeDefinition.kind === "SCALAR" || typeDefinition.kind === "ENUM";
   }
 
-  // Execute GraphQL query against an endpoint
   async executeQuery(
     url: string,
     payload: {
@@ -847,7 +794,6 @@ export class GraphQLService {
       spec.setHeader("Accept", "application/json");
       spec.setBody(requestBody);
 
-      // Send request using Caido SDK (adds to HTTP History)
       const result = await this.sdk.requests.send(spec);
 
       if (result.response === undefined) {
@@ -870,7 +816,6 @@ export class GraphQLService {
         responseBody,
       ) as Record<string, unknown>;
 
-      // Check for GraphQL errors
       if (
         Array.isArray(parsedResult.errors) &&
         parsedResult.errors.length > 0

@@ -1,9 +1,7 @@
-// Result type for consistent error handling
 export type Result<T> =
   | { kind: "Error"; error: string }
   | { kind: "Ok"; value: T };
 
-// GraphQL Schema Types
 export type GraphQLSchema = {
   queries: GraphQLField[];
   mutations: GraphQLField[];
@@ -14,7 +12,7 @@ export type GraphQLSchema = {
   unions: GraphQLUnion[];
   scalars: GraphQLScalar[];
   pointsOfInterest: PointOfInterest[];
-  allTypes?: IntrospectionType[]; // Raw introspection types for query generation
+  allTypes?: IntrospectionType[];
 };
 
 export type GraphQLEnum = {
@@ -76,7 +74,6 @@ export type GraphQLType = {
   fields?: GraphQLField[];
 };
 
-// Introspection types for raw GraphQL schema data
 export type IntrospectionType = {
   kind: string;
   name?: string;
@@ -125,7 +122,6 @@ export type IntrospectionSchema = {
   types: IntrospectionType[];
 };
 
-// Attack Types
 export type AttackType =
   | "introspection"
   | "depth-limit"

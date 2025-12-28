@@ -5,7 +5,6 @@ import { GraphQLAttackService } from "./api/attacks";
 import { GraphQLService } from "./api/graphql";
 import { setSDK } from "./sdk";
 
-// Re-export types from shared
 export type {
   Result,
   GraphQLSchema,
@@ -24,10 +23,8 @@ export type {
   AttackSession,
 } from "shared";
 
-// Export backend-specific types
 export { type BackendEvents } from "./types";
 
-// Test GraphQL endpoint using the service
 const testGraphQLEndpoint = async (
   sdk: SDK,
   url: string,
@@ -37,7 +34,6 @@ const testGraphQLEndpoint = async (
   return await graphqlService.testEndpoint(url, customHeaders);
 };
 
-// Generate GraphQL query
 const generateGraphQLQuery = (
   sdk: SDK,
   field: {
@@ -59,7 +55,6 @@ const generateGraphQLQuery = (
   );
 };
 
-// Execute GraphQL query
 const executeGraphQLQuery = async (
   sdk: SDK,
   url: string,
@@ -73,13 +68,11 @@ const executeGraphQLQuery = async (
   return await graphqlService.executeQuery(url, payload);
 };
 
-// Execute GraphQL attacks
 const executeGraphQLAttacks = async (sdk: SDK, config: AttackConfig) => {
   const attackService = new GraphQLAttackService(sdk);
   return await attackService.executeAttacks(config);
 };
 
-// Start attack session
 const startGraphQLAttacks = async (
   sdk: SDK,
   config: AttackConfig,
@@ -88,7 +81,6 @@ const startGraphQLAttacks = async (
   return await attackService.startAttacksAsync(config);
 };
 
-// Get attack status and results by session ID
 const getAttackStatus = async (
   sdk: SDK,
   sessionId: string,
@@ -97,7 +89,6 @@ const getAttackStatus = async (
   return await attackService.getAttackStatus(sessionId);
 };
 
-// Cancel attack session
 const cancelAttackSession = async (
   sdk: SDK,
   sessionId: string,
@@ -106,7 +97,6 @@ const cancelAttackSession = async (
   return await attackService.cancelAttackSession(sessionId);
 };
 
-// Get attack templates
 const getAttackTemplates = (sdk: SDK) => {
   const attackService = new GraphQLAttackService(sdk);
   return attackService.generateAttackTemplates();

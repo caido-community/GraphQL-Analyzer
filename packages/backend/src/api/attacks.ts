@@ -27,11 +27,9 @@ export class GraphQLAttackService {
 
   constructor(private sdk: SDK) {}
 
-  // Add headers to RequestSpec
   private addHeaders(spec: RequestSpec, config: AttackConfig) {
     let finalHeaders: Record<string, string> = {};
 
-    // Extract host and port from targetUrl for Host header
     let hostHeader = "";
     try {
       const url = new URL(config.targetUrl);
@@ -56,59 +54,48 @@ export class GraphQLAttackService {
     }
 
     if (config.useOriginalHeaders === true && config.originalHeaders) {
-      // Use original request headers as base
       finalHeaders = { ...config.originalHeaders };
 
-      // Ensure critical GraphQL headers are set correctly
       finalHeaders["Content-Type"] = "application/json";
       finalHeaders["Accept"] = "application/json";
 
-      // Override Host header with correct value including port
       if (hostHeader) {
         finalHeaders["Host"] = hostHeader;
       }
 
-      // Remove query-related headers that might interfere
       delete finalHeaders["Content-Length"];
     } else {
-      // Use default headers
       finalHeaders = {
         "Content-Type": "application/json",
         Accept: "application/json",
         "User-Agent": "Caido/GraphQL-Analyzer",
       };
 
-      // Set Host header with port
       if (hostHeader) {
         finalHeaders["Host"] = hostHeader;
       }
     }
 
-    // Apply custom headers (these always override everything)
     if (config.customHeaders) {
       for (const [customName, customValue] of Object.entries(
         config.customHeaders,
       )) {
         if (customName && customValue) {
-          // Check for header conflicts
           const matchingKey = Object.keys(finalHeaders).find(
             (existingKey) =>
               existingKey.toLowerCase() === customName.toLowerCase(),
           );
 
           if (matchingKey !== undefined) {
-            // Override the existing header
             delete finalHeaders[matchingKey];
             finalHeaders[customName] = customValue;
           } else {
-            // Add new custom header
             finalHeaders[customName] = customValue;
           }
         }
       }
     }
 
-    // Set all final headers
     for (const [name, value] of Object.entries(finalHeaders)) {
       if (value) {
         spec.setHeader(name, value);
@@ -116,7 +103,6 @@ export class GraphQLAttackService {
     }
   }
 
-  // Execute multiple attack types
   async executeAttacks(config: AttackConfig): Promise<Result<AttackResult[]>> {
     try {
       const results: AttackResult[] = [];
@@ -130,7 +116,6 @@ export class GraphQLAttackService {
         if (attackResult.kind === "Ok") {
           results.push(attackResult.value);
         } else {
-          // Add failed attack result
           results.push({
             id: `${attackType}-${Date.now()}`,
             attackType,
@@ -158,7 +143,6 @@ export class GraphQLAttackService {
     }
   }
 
-  // Execute single attack type
   private async executeAttack(
     attackType: AttackType,
     config: AttackConfig,
@@ -179,14 +163,12 @@ export class GraphQLAttackService {
     }
   }
 
-  // Introspection Attack - Tests if schema introspection is enabled with multiple retries
   private async executeIntrospectionAttack(
     config: AttackConfig,
   ): Promise<Result<AttackResult>> {
     const attackId = `introspection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const findings: AttackFinding[] = [];
 
-    // Single introspection query for faster execution (was 4 queries)
     const introspectionQueries = [
       {
         name: "Standard Introspection",
@@ -212,7 +194,6 @@ export class GraphQLAttackService {
     let totalRequests = 0;
 
     for (const queryTest of introspectionQueries) {
-      // Try each query multiple times (2-3 retries) to ensure reliability
       const maxRetries = 3;
       let introspectionFound = false;
 
@@ -241,7 +222,6 @@ export class GraphQLAttackService {
           totalTiming += timing;
           totalRequests++;
 
-          // Store the request/response data - ensure we always have valid data
           if (result.request !== undefined) {
             lastRequest = result.request;
           }
@@ -280,7 +260,7 @@ export class GraphQLAttackService {
                   break;
                 }
               } catch {
-                //
+                void 0;
               }
             } else if (result.response.getCode() === 400) {
               try {
@@ -304,7 +284,7 @@ export class GraphQLAttackService {
                   break;
                 }
               } catch {
-                //
+                void 0;
               }
             }
           }
@@ -347,7 +327,6 @@ export class GraphQLAttackService {
     return { kind: "Ok", value: result };
   }
 
-  // Depth Attack - Tests for query depth limits with multiple depth levels
   private async executeDepthAttack(
     config: AttackConfig,
   ): Promise<Result<AttackResult>> {
@@ -436,7 +415,7 @@ export class GraphQLAttackService {
                 break;
               }
             } catch {
-              //
+              void 0;
             }
           }
         }
@@ -474,14 +453,12 @@ export class GraphQLAttackService {
     return { kind: "Ok", value: result };
   }
 
-  // Complexity Attack - Tests for query complexity limits with escalating complexity
   private async executeComplexityAttack(
     config: AttackConfig,
   ): Promise<Result<AttackResult>> {
     const attackId = `complexity-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const findings: AttackFinding[] = [];
 
-    // Test increasing complexity levels
     const complexityTests = [
       {
         name: "Medium Complexity",
@@ -532,7 +509,6 @@ export class GraphQLAttackService {
         const timing = endTime - startTime;
         totalTiming += timing;
 
-        // Store the request/response data - ensure we always have valid data
         if (result.request !== undefined) {
           lastRequest = result.request;
         }
@@ -572,10 +548,10 @@ export class GraphQLAttackService {
                   );
                 })
               ) {
-                //
+                void 0;
               }
             } catch {
-              //
+              void 0;
             }
           }
         }
@@ -613,7 +589,6 @@ export class GraphQLAttackService {
     return { kind: "Ok", value: result };
   }
 
-  // Batch Attack - Tests for batch query limits with increasing batch sizes
   private async executeBatchAttack(
     config: AttackConfig,
   ): Promise<Result<AttackResult>> {
@@ -621,7 +596,6 @@ export class GraphQLAttackService {
     const findings: AttackFinding[] = [];
     const maxBatchSize = config.batchSize ?? 10;
 
-    // Test fewer batch sizes for faster execution (was [2, 5, maxBatchSize, maxBatchSize * 2])
     const batchTests = [5, maxBatchSize];
     let lastRequest: Request | undefined;
     let lastResponse: Response | undefined;
@@ -630,7 +604,6 @@ export class GraphQLAttackService {
 
     for (const batchSize of batchTests) {
       try {
-        // Generate batch query array
         const queries = [];
         for (let i = 0; i < batchSize; i++) {
           queries.push({
@@ -653,7 +626,6 @@ export class GraphQLAttackService {
         const timing = endTime - startTime;
         totalTiming += timing;
 
-        // Store the request/response data - ensure we always have valid data
         if (result.request !== undefined) {
           lastRequest = result.request;
         }
@@ -683,7 +655,7 @@ export class GraphQLAttackService {
                 }
               }
             } catch {
-              // Non-JSON response to batch query
+              void 0;
             }
           } else if (result.response.getCode() === 400) {
             try {
@@ -706,7 +678,7 @@ export class GraphQLAttackService {
                 break;
               }
             } catch {
-              //
+              void 0;
             }
           }
         }
@@ -744,14 +716,12 @@ export class GraphQLAttackService {
     return { kind: "Ok", value: result };
   }
 
-  // Field Suggestion Attack - Tests for field suggestion vulnerabilities with multiple probes
   private async executeFieldSuggestionAttack(
     config: AttackConfig,
   ): Promise<Result<AttackResult>> {
     const attackId = `field-suggestion-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const findings: AttackFinding[] = [];
 
-    // Test different types of malformed queries to trigger suggestions
     const suggestionTests = [
       {
         name: "Non-existent Fields",
@@ -803,7 +773,6 @@ export class GraphQLAttackService {
         const timing = endTime - startTime;
         totalTiming += timing;
 
-        // Store the request/response data - ensure we always have valid data
         if (result.request !== undefined) {
           lastRequest = result.request;
         }
@@ -851,7 +820,7 @@ export class GraphQLAttackService {
               }
             }
           } catch {
-            //
+            void 0;
           }
         }
       } catch (error) {
@@ -888,7 +857,6 @@ export class GraphQLAttackService {
     return { kind: "Ok", value: result };
   }
 
-  // Generate attack templates for manual testing
   generateAttackTemplates(): Record<
     AttackType,
     { name: string; description: string; query: string }
@@ -989,11 +957,9 @@ export class GraphQLAttackService {
     };
   }
 
-  // Start attacks asynchronously
   startAttacksAsync(config: AttackConfig): Promise<Result<string>> {
     const sessionId = `attack-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    // Initialize session
     GraphQLAttackService.attackSessions.set(sessionId, {
       config,
       status: "running",
@@ -1019,7 +985,6 @@ export class GraphQLAttackService {
     return Promise.resolve({ kind: "Ok" as const, value: sessionId });
   }
 
-  // Get current attack status and results
   getAttackStatus(sessionId: string): Promise<
     Result<{
       status: string;
@@ -1055,7 +1020,6 @@ export class GraphQLAttackService {
     });
   }
 
-  // Cancel attack session
   cancelAttackSession(sessionId: string): Promise<Result<void>> {
     const session = GraphQLAttackService.attackSessions.get(sessionId);
 
@@ -1070,7 +1034,6 @@ export class GraphQLAttackService {
     return Promise.resolve({ kind: "Ok" as const, value: undefined });
   }
 
-  // Execute attacks with real-time updates
   private async executeAttacksRealTime(
     sessionId: string,
     config: AttackConfig,
@@ -1082,15 +1045,13 @@ export class GraphQLAttackService {
 
     try {
       for (let i = 0; i < config.attackTypes.length; i++) {
-        // Check if session was cancelled
         if (session.status === "cancelled") {
           break;
         }
 
         const attackType = config.attackTypes[i];
-        if (!attackType) continue; // Skip if undefined
+        if (!attackType) continue;
 
-        // Update progress
         session.progress = (i / config.attackTypes.length) * 100;
         session.currentAttack = attackType;
 
@@ -1099,7 +1060,6 @@ export class GraphQLAttackService {
         if (attackResult.kind === "Ok") {
           session.results.push(attackResult.value);
         } else {
-          // Add failed attack result
           session.results.push({
             id: `${attackType}-${Date.now()}`,
             attackType,
@@ -1118,7 +1078,6 @@ export class GraphQLAttackService {
         session.progress = ((i + 1) / config.attackTypes.length) * 100;
       }
 
-      // Mark as completed
       session.status = "completed";
       session.progress = 100;
       session.endTime = new Date();

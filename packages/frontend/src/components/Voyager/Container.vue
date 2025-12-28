@@ -135,7 +135,6 @@ watch(debouncedSearchTerm, () => {
   }
 });
 
-// Collapse/expand state for navigation sections
 const expandedSections = ref<Record<string, boolean>>({
   Query: true,
   Mutation: true,
@@ -147,7 +146,6 @@ const filteredItems = computed(() => {
 
   const items: NavItem[] = [];
 
-  // Add root operations
   if (currentSchema.value.queries.length > 0) {
     items.push({
       name: "Query",
@@ -184,7 +182,6 @@ const filteredItems = computed(() => {
     });
   }
 
-  // Add types
   if (currentSchema.value.types.length > 0) {
     currentSchema.value.types.forEach((type: GraphQLType) => {
       items.push({
@@ -201,7 +198,6 @@ const filteredItems = computed(() => {
     });
   }
 
-  // Add enums
   if (currentSchema.value.enums.length > 0) {
     currentSchema.value.enums.forEach(
       (enumType: { name: string; values: Array<{ name: string }> }) => {
@@ -350,7 +346,6 @@ const toggleSection = (sectionName: string) => {
 };
 
 const shouldShowChildren = (item: NavItem): boolean => {
-  // For root sections (Query, Mutation, Subscription), check expanded state
   if (
     item.type === "root" &&
     ["Query", "Mutation", "Subscription"].includes(item.name)
@@ -358,7 +353,6 @@ const shouldShowChildren = (item: NavItem): boolean => {
     return expandedSections.value[item.name] === true;
   }
 
-  // For types and enums, always show children (they're not collapsible)
   return true;
 };
 
@@ -399,7 +393,6 @@ const toggleNodeHighlight = (nodeData: D3Node) => {
   }
 };
 
-// Update node styles based on highlighting
 const updateNodeStyles = (nodes: D3Node[], highlightedIds: number[]) => {
   if (voyagerContainer.value === undefined) return;
 
@@ -409,7 +402,6 @@ const updateNodeStyles = (nodes: D3Node[], highlightedIds: number[]) => {
     const nodeGroup = d3.select(this as SVGElement);
     const isHighlighted = highlightedIds.includes(d.id);
 
-    // Update node opacity and styling
     nodeGroup
       .style(
         "opacity",
@@ -419,7 +411,6 @@ const updateNodeStyles = (nodes: D3Node[], highlightedIds: number[]) => {
       .attr("stroke-width", isHighlighted ? 3 : 2);
   });
 
-  // Update link styles - keep highlighted connections clear
   svg.selectAll<SVGLineElement, D3Link>(".link").each(function (d: D3Link) {
     const link = d3.select(this as SVGElement);
     const sourceId = typeof d.source === "object" ? d.source.id : d.source;
@@ -479,7 +470,6 @@ const loadSessions = async () => {
         createdAt: new Date(s.createdAt),
       }));
 
-      // Check for auto-select from Explorer navigation
       const autoSelectSessionId = localStorage.getItem(
         "voyager-auto-select-session",
       );
@@ -490,7 +480,7 @@ const loadSessions = async () => {
         if (sessionToSelect !== undefined) {
           await selectSession(autoSelectSessionId);
         }
-        // Clear the flag after use
+
         localStorage.removeItem("voyager-auto-select-session");
         return; // Skip setting to undefined
       }
@@ -524,11 +514,9 @@ const selectSession = async (sessionId: string) => {
   loadVoyagerVisualization();
 };
 
-// Format full field signature with arguments
 const formatFieldSignature = (field: GraphQLField): string => {
   let signature = field.name;
 
-  // Add arguments if they exist
   if (field.args.length > 0) {
     const argsStr = field.args
       .map((arg: { name: string; type: string }) => `${arg.name}: ${arg.type}`)
@@ -536,7 +524,6 @@ const formatFieldSignature = (field: GraphQLField): string => {
     signature += `(${argsStr})`;
   }
 
-  // Add return type
   if (field.type !== undefined) {
     signature += `: ${field.type}`;
   }
@@ -695,7 +682,7 @@ const parseSchemaToD3 = (schema: GraphQLSchema) => {
       (enumType: { name: string; values: Array<{ name: string }> }) => {
         const id = nodeId++;
         const enumValues = enumType.values ?? [];
-        // Convert enum values to GraphQLField format for calculateBoxDimensions
+
         const enumFields: GraphQLField[] = enumValues.map(
           (v: { name: string }) => ({
             name: v.name,
@@ -740,7 +727,6 @@ const parseSchemaToD3 = (schema: GraphQLSchema) => {
     }
   });
 
-  // Links between custom types
   if (schema.types.length > 0) {
     schema.types.forEach((type: GraphQLType) => {
       const sourceNode = nodeMap.get(type.name);
@@ -934,7 +920,6 @@ const loadVoyagerVisualization = () => {
         });
     });
 
-    // Create node groups
     const nodeGroups = g
       .selectAll<SVGGElement, D3Node>(".node")
       .data(nodes)
@@ -944,7 +929,6 @@ const loadVoyagerVisualization = () => {
       .attr("transform", (d: D3Node) => `translate(${d.x}, ${d.y})`)
       .style("cursor", "pointer");
 
-    // Draw node containers (boxes) - CAIDO THEME
     nodeGroups
       .append("rect")
       .attr("width", (d: D3Node) => d.width)
@@ -956,7 +940,6 @@ const loadVoyagerVisualization = () => {
       .attr("stroke-width", 2)
       .attr("filter", "drop-shadow(0 2px 8px rgba(0,0,0,0.3))");
 
-    // Add node headers (type names)
     nodeGroups
       .append("rect")
       .attr("width", (d: D3Node) => d.width)
@@ -975,7 +958,6 @@ const loadVoyagerVisualization = () => {
       .attr("font-weight", "bold")
       .text((d: D3Node) => d.name);
 
-    // Add field lists
     nodeGroups.each(function (d: D3Node) {
       const node = d3.select(this as SVGElement);
 
@@ -984,7 +966,6 @@ const loadVoyagerVisualization = () => {
           (field: { name: string; type: string }, index: number) => {
             const y = 35 + index * 18; // Back to original spacing
 
-            // Simple field name display in graph
             node
               .append("text")
               .attr("x", 8)
@@ -995,7 +976,6 @@ const loadVoyagerVisualization = () => {
               .attr("font-weight", "500")
               .text(field.name);
 
-            // Field type on the right
             if (field.type !== undefined) {
               node
                 .append("text")
@@ -1083,7 +1063,6 @@ const loadVoyagerVisualization = () => {
       });
     }
 
-    // Show success notification when graph is ready
     sdk.window.showToast(
       "Graph loaded successfully! Click nodes to highlight parent chains.",
       { variant: "success" },
@@ -1095,7 +1074,6 @@ const loadVoyagerVisualization = () => {
   }
 };
 
-// Setup minimap drag interaction
 const setupMinimapDrag = () => {
   if (
     minimapSvg.value === undefined ||
@@ -1118,11 +1096,9 @@ const setupMinimapDrag = () => {
     .on("start", (event) => {
       if (currentTransform.value === undefined) return;
 
-      // Store the initial click position
       dragStartX = event.x;
       dragStartY = event.y;
 
-      // Store the initial viewport position
       initialViewportX = -currentTransform.value.x / currentTransform.value.k;
       initialViewportY = -currentTransform.value.y / currentTransform.value.k;
     })
@@ -1135,19 +1111,15 @@ const setupMinimapDrag = () => {
 
       const svg = d3.select(voyagerContainer.value).select("svg");
 
-      // Calculate the offset from the start position
       const deltaX = event.x - dragStartX;
       const deltaY = event.y - dragStartY;
 
-      // Calculate new viewport position accounting for the offset
       const newViewportX = initialViewportX + deltaX;
       const newViewportY = initialViewportY + deltaY;
 
-      // Convert back to transform coordinates
       const newX = -newViewportX * currentTransform.value.k;
       const newY = -newViewportY * currentTransform.value.k;
 
-      // Apply the new transform
       if (currentZoom.value !== undefined) {
         svg.transition().duration(0).call(
           // @ts-expect-error - D3.js transition type compatibility
@@ -1162,7 +1134,6 @@ const setupMinimapDrag = () => {
   minimapRect.style("cursor", "move");
 };
 
-// Watch for changes that require minimap drag setup
 watch(
   [selectedSession, cachedD3Data, currentTransform],
   () => {
@@ -1563,7 +1534,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Voyager visualization styling */
 :deep(svg) {
   cursor: grab;
   font-family:

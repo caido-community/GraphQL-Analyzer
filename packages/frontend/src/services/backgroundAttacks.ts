@@ -1,8 +1,5 @@
 import type { FrontendSDK } from "../types";
 
-/**
- * Background Attack Service for managing attacks that run even when user navigates away
- */
 export class BackgroundAttackService {
   private sdk: FrontendSDK;
   private pollInterval: number | undefined = undefined;
@@ -12,14 +9,9 @@ export class BackgroundAttackService {
     this.sdk = sdk;
   }
 
-  /**
-   * Start background polling for an attack session
-   */
   startBackgroundAttack(sessionId: string, attackTypes: string[]): void {
-    // Stop any existing polling
     this.stopBackgroundAttack();
 
-    // Store attack info for persistence across page reloads
     localStorage.setItem(
       "graphql-analyzer-background-attack",
       JSON.stringify({
@@ -29,13 +21,9 @@ export class BackgroundAttackService {
       }),
     );
 
-    // Start polling
     this.startPolling(sessionId);
   }
 
-  /**
-   * Stop background attack polling
-   */
   stopBackgroundAttack(): void {
     if (this.pollInterval !== undefined) {
       clearInterval(this.pollInterval);
@@ -45,17 +33,11 @@ export class BackgroundAttackService {
     localStorage.removeItem("graphql-analyzer-background-attack");
   }
 
-  /**
-   * Check if there's a background attack running
-   */
   hasBackgroundAttack(): boolean {
     const stored = localStorage.getItem("graphql-analyzer-background-attack");
     return stored !== null && stored !== "";
   }
 
-  /**
-   * Resume background attack if one exists (for page reloads)
-   */
   resumeBackgroundAttack(): void {
     const stored = localStorage.getItem("graphql-analyzer-background-attack");
     if (stored !== null && stored !== "") {
@@ -67,15 +49,11 @@ export class BackgroundAttackService {
         };
         this.startPolling(attackInfo.sessionId);
       } catch (error) {
-        // Invalid stored data, clean up
         localStorage.removeItem("graphql-analyzer-background-attack");
       }
     }
   }
 
-  /**
-   * Get background attack info
-   */
   getBackgroundAttackInfo():
     | { sessionId: string; attackTypes: string[]; startTime: number }
     | undefined {
@@ -94,9 +72,6 @@ export class BackgroundAttackService {
     return undefined;
   }
 
-  /**
-   * Private polling logic
-   */
   private startPolling(sessionId: string): void {
     let errorCount = 0;
     const maxErrors = 5;
@@ -186,9 +161,6 @@ export class BackgroundAttackService {
     }, 2000);
   }
 
-  /**
-   * Get singleton instance
-   */
   static getInstance(sdk: FrontendSDK): BackgroundAttackService {
     if (BackgroundAttackService.instance === undefined) {
       BackgroundAttackService.instance = new BackgroundAttackService(sdk);
@@ -197,9 +169,6 @@ export class BackgroundAttackService {
   }
 }
 
-/**
- * Create and export singleton instance
- */
 let backgroundAttackServiceInstance: BackgroundAttackService | undefined =
   undefined;
 
@@ -208,7 +177,6 @@ export function createBackgroundAttackService(
 ): BackgroundAttackService {
   if (backgroundAttackServiceInstance === undefined) {
     backgroundAttackServiceInstance = BackgroundAttackService.getInstance(sdk);
-    // Auto-resume any background attacks on service creation
     backgroundAttackServiceInstance.resumeBackgroundAttack();
   }
   return backgroundAttackServiceInstance;
