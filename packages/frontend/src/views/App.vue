@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 
-import { Navigation } from "../components/common";
-
-import Attacks from "./Attacks.vue";
-import Dashboard from "./Dashboard.vue";
-import Explorer from "./Explorer.vue";
-import Docs from "./Docs.vue";
-import Voyager from "./Voyager.vue";
+import { Attacks } from "@/components/attacks";
+import { Navigation } from "@/components/common";
+import { Dashboard } from "@/components/dashboard";
+import { Docs } from "@/components/Docs";
+import { Explorer } from "@/components/Explorer";
+import { Voyager } from "@/components/Voyager";
 
 type PageType = "Dashboard" | "Explorer" | "Voyager" | "Attacks" | "Docs";
 
@@ -43,32 +42,40 @@ const handleNavigationEvent = (event: CustomEvent) => {
 
 // Handle navigation events from context menus
 const checkPendingNavigation = () => {
-  const pendingNav = localStorage.getItem('graphql-analyzer-navigate-to');
-  const navTimestamp = localStorage.getItem('graphql-analyzer-navigate-timestamp');
-  
+  const pendingNav = localStorage.getItem("graphql-analyzer-navigate-to");
+  const navTimestamp = localStorage.getItem(
+    "graphql-analyzer-navigate-timestamp",
+  );
+
   if (pendingNav && navTimestamp) {
     const now = Date.now();
-    const shouldNavigate = (now - parseInt(navTimestamp)) < 2000;
-    
+    const shouldNavigate = now - parseInt(navTimestamp) < 2000;
+
     if (shouldNavigate) {
       currentPage.value = pendingNav as PageType;
     }
-    
-    localStorage.removeItem('graphql-analyzer-navigate-to');
-    localStorage.removeItem('graphql-analyzer-navigate-timestamp');
+
+    localStorage.removeItem("graphql-analyzer-navigate-to");
+    localStorage.removeItem("graphql-analyzer-navigate-timestamp");
   }
 };
 
 onMounted(() => {
   checkPendingNavigation();
-  
-  window.addEventListener('graphql-analyzer-navigate', handleNavigationEvent as any);
-  window.addEventListener('focus', checkPendingNavigation);
+
+  window.addEventListener(
+    "graphql-analyzer-navigate",
+    handleNavigationEvent as any,
+  );
+  window.addEventListener("focus", checkPendingNavigation);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('graphql-analyzer-navigate', handleNavigationEvent as any);
-  window.removeEventListener('focus', checkPendingNavigation);
+  window.removeEventListener(
+    "graphql-analyzer-navigate",
+    handleNavigationEvent as any,
+  );
+  window.removeEventListener("focus", checkPendingNavigation);
 });
 </script>
 

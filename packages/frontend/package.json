@@ -22,6 +22,7 @@
     "@caido/sdk-backend": "^0.51.0",
     "@caido/sdk-frontend": "^0.51.2-beta.0",
     "backend": "workspace:*",
+    "shared": "workspace:*",
     "vue-tsc": "2.0.29"
   }
 }

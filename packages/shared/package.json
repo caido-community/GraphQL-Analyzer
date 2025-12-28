@@ -1,15 +1,14 @@
 {
-  "name": "backend",
+  "name": "shared",
   "version": "0.0.0",
   "type": "module",
   "types": "src/index.ts",
+  "main": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "shared": "workspace:*"
-  },
   "devDependencies": {
-    "@caido/sdk-backend": "^0.51.0"
+    "typescript": "5.5.4"
   }
 }
+

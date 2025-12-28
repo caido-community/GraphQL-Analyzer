@@ -8,10 +8,7 @@ import "./styles/index.css";
 import type { FrontendSDK } from "./types";
 import App from "./views/App.vue";
 
-
 export const init = (sdk: FrontendSDK) => {
-
-  
   const app = createApp(App);
 
   // Load the PrimeVue component library
@@ -29,7 +26,6 @@ export const init = (sdk: FrontendSDK) => {
     height: "100%",
     width: "100%",
   });
-
 
   root.id = `plugin--graphql-analyzer`;
 
@@ -51,23 +47,27 @@ export const init = (sdk: FrontendSDK) => {
     label: "GraphQL",
     view: {
       component: GraphQLViewMode,
-    }
+    },
   });
 
   // Register the GraphQL request view mode in Replay
-  sdk.replay.addRequestViewMode({
-    label: "GraphQL",
-    view: {
-      component: GraphQLViewMode,
-    }
-  });
+  try {
+    (sdk.replay as any).addRequestViewMode?.({
+      label: "GraphQL",
+      view: {
+        component: GraphQLViewMode,
+      },
+    });
+  } catch {
+    // Method may not be available
+  }
 
   // Register the GraphQL request view mode in Search
   sdk.search.addRequestViewMode({
     label: "GraphQL",
     view: {
       component: GraphQLViewMode,
-    }
+    },
   });
 
   // Register the GraphQL request view mode in Sitemap
@@ -75,10 +75,8 @@ export const init = (sdk: FrontendSDK) => {
     label: "GraphQL",
     view: {
       component: GraphQLViewMode,
-    }
+    },
   });
-
-
 
   // Register context menu commands
   sdk.commands.register("graphql-analyzer-scan", {
@@ -107,51 +105,60 @@ export const init = (sdk: FrontendSDK) => {
 
       // Build URL from basic properties with null safety
       const protocol = requestData.port === 443 ? "https" : "http";
-      const portPart = (requestData.port === 80 || requestData.port === 443) ? "" : `:${requestData.port}`;
-      
-      const path = requestData.path || '/';
-      const query = requestData.query || '';
-      const queryString = query ? `?${query}` : '';
-      
+      const portPart =
+        requestData.port === 80 || requestData.port === 443
+          ? ""
+          : `:${requestData.port}`;
+
+      const path = requestData.path || "/";
+      const query = requestData.query || "";
+      const queryString = query ? `?${query}` : "";
+
       let graphqlUrl = `${protocol}://${requestData.host}${portPart}${path}${queryString}`;
-      
+
       // Only modify URL if it doesn't contain 'graphql' AND has no query parameters
-      if (!graphqlUrl.toLowerCase().includes('graphql') && !queryString) {
+      if (!graphqlUrl.toLowerCase().includes("graphql") && !queryString) {
         graphqlUrl = `${protocol}://${requestData.host}${portPart}/graphql`;
       }
 
       const headers: Record<string, string> = {};
-      
+
       if (context.type === "RequestContext" && requestData.getRaw) {
         try {
           const rawData = requestData.getRaw();
-          const rawString = rawData?.toText?.() || '';
-          
+          const rawString = rawData?.toText?.() || "";
+
           if (rawString) {
             const lines = rawString.split(/\r?\n/);
             let inHeaders = false;
-            
+
             for (let i = 0; i < lines.length; i++) {
               const line = lines[i];
               if (!line) {
                 if (inHeaders) break;
                 continue;
               }
-              
+
               const trimmedLine = line.trim();
-              
+
               if (i === 0) {
                 inHeaders = true;
                 continue;
               }
-              
-              if (inHeaders && trimmedLine === '') break;
-              
-              if (inHeaders && trimmedLine.includes(':')) {
-                const colonIndex = trimmedLine.indexOf(':');
+
+              if (inHeaders && trimmedLine === "") break;
+
+              if (inHeaders && trimmedLine.includes(":")) {
+                const colonIndex = trimmedLine.indexOf(":");
                 const headerName = trimmedLine.substring(0, colonIndex).trim();
-                const headerValue = trimmedLine.substring(colonIndex + 1).trim();
-                if (headerName && headerValue && headerName.toLowerCase() !== 'content-length') {
+                const headerValue = trimmedLine
+                  .substring(colonIndex + 1)
+                  .trim();
+                if (
+                  headerName &&
+                  headerValue &&
+                  headerName.toLowerCase() !== "content-length"
+                ) {
                   headers[headerName] = headerValue;
                 }
               }
@@ -163,20 +170,30 @@ export const init = (sdk: FrontendSDK) => {
       }
 
       window.location.hash = "/graphql-analyzer";
-      
-      localStorage.setItem('graphql-analyzer-navigate-to', 'Dashboard');
-      localStorage.setItem('graphql-analyzer-navigate-timestamp', Date.now().toString());
-      localStorage.setItem('graphql-analyzer-context-scan-url', graphqlUrl);
-      localStorage.setItem('graphql-analyzer-context-scan-headers', JSON.stringify(headers));
-      
-      window.dispatchEvent(new CustomEvent('graphql-analyzer-navigate', { 
-        detail: { page: 'Dashboard' } 
-      }));
-      
-      window.dispatchEvent(new CustomEvent('graphql-analyzer-context-scan', { 
-        detail: { url: graphqlUrl, headers } 
-      }));
-      
+
+      localStorage.setItem("graphql-analyzer-navigate-to", "Dashboard");
+      localStorage.setItem(
+        "graphql-analyzer-navigate-timestamp",
+        Date.now().toString(),
+      );
+      localStorage.setItem("graphql-analyzer-context-scan-url", graphqlUrl);
+      localStorage.setItem(
+        "graphql-analyzer-context-scan-headers",
+        JSON.stringify(headers),
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("graphql-analyzer-navigate", {
+          detail: { page: "Dashboard" },
+        }),
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("graphql-analyzer-context-scan", {
+          detail: { url: graphqlUrl, headers },
+        }),
+      );
+
       sdk.window.showToast(`Scanning: ${graphqlUrl}`, { variant: "info" });
     },
     group: "GraphQL Analyzer",
@@ -188,7 +205,7 @@ export const init = (sdk: FrontendSDK) => {
     },
   });
 
-  // Register attack command  
+  // Register attack command
   sdk.commands.register("graphql-analyzer-attack", {
     name: "Attack GraphQL Endpoint",
     run: async (context) => {
@@ -212,40 +229,50 @@ export const init = (sdk: FrontendSDK) => {
       }
 
       window.location.hash = "/graphql-analyzer";
-      
-      localStorage.setItem('graphql-analyzer-navigate-to', 'Attacks');
-      localStorage.setItem('graphql-analyzer-navigate-timestamp', Date.now().toString());
-      
-      let rawString = '';
+
+      localStorage.setItem("graphql-analyzer-navigate-to", "Attacks");
+      localStorage.setItem(
+        "graphql-analyzer-navigate-timestamp",
+        Date.now().toString(),
+      );
+
+      let rawString = "";
       if (context.type === "RequestContext" && selectedRequest.getRaw) {
         try {
           const rawData = selectedRequest.getRaw();
-          rawString = rawData?.toText?.() || '';
+          rawString = rawData?.toText?.() || "";
         } catch (error) {
           // Continue without raw data
         }
       }
-      
+
       // Use direct property access for request data with null safety
       const requestData = {
-        id: selectedRequest.id?.toString() || '',
-        host: selectedRequest.host || '',
+        id: selectedRequest.id?.toString() || "",
+        host: selectedRequest.host || "",
         port: selectedRequest.port || 80,
-        path: selectedRequest.path || '/',
-        query: selectedRequest.query || '',
+        path: selectedRequest.path || "/",
+        query: selectedRequest.query || "",
         headers: selectedRequest.headers || {},
-        raw: rawString
+        raw: rawString,
       };
-      
-      localStorage.setItem('graphql-analyzer-context-attack-request', JSON.stringify(requestData));
-      
-      window.dispatchEvent(new CustomEvent('graphql-analyzer-navigate', { 
-        detail: { page: 'Attacks' } 
-      }));
-      
-      window.dispatchEvent(new CustomEvent('graphql-analyzer-context-attack', { 
-        detail: { request: requestData } 
-      }));
+
+      localStorage.setItem(
+        "graphql-analyzer-context-attack-request",
+        JSON.stringify(requestData),
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("graphql-analyzer-navigate", {
+          detail: { page: "Attacks" },
+        }),
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("graphql-analyzer-context-attack", {
+          detail: { request: requestData },
+        }),
+      );
 
       sdk.window.showToast("Sending to attack page...", { variant: "info" });
     },
@@ -284,4 +311,3 @@ export const init = (sdk: FrontendSDK) => {
     leadingIcon: "fas fa-shield-alt",
   });
 };
-

@@ -2,8 +2,8 @@
 import { useDebounceFn, whenever } from "@vueuse/core";
 import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
+import type { AttackSession } from "shared";
 import { nextTick, ref } from "vue";
-import type { AttackSession } from "backend";
 
 const isEditable = defineModel<boolean>("isEditable", { default: false });
 
@@ -39,21 +39,6 @@ const contextMenuItems = [
   },
 ];
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "completed":
-      return "bg-green-500";
-    case "failed":
-      return "bg-red-500";
-    case "cancelled":
-      return "bg-yellow-500";
-    case "running":
-      return "bg-blue-500";
-    default:
-      return "bg-surface-400";
-  }
-};
-
 const getStatusIcon = (status: string) => {
   switch (status) {
     case "completed":
@@ -67,17 +52,6 @@ const getStatusIcon = (status: string) => {
     default:
       return "fas fa-circle";
   }
-};
-
-const formatDate = (date: Date) => {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
-  return `${Math.floor(diffMins / 1440)}d ago`;
 };
 
 const onDoubleClick = () => {
@@ -130,7 +104,12 @@ const onSelect = (event: MouseEvent) => {
       @mousedown="onSelect"
     >
       <div class="flex items-center gap-2 min-w-0 w-full">
-        <i :class="['text-xs flex-shrink-0', getStatusIcon(attackSession.status)]"></i>
+        <i
+          :class="[
+            'text-xs flex-shrink-0',
+            getStatusIcon(attackSession.status),
+          ]"
+        ></i>
 
         <template v-if="isEditable">
           <div class="relative flex-1 min-w-0">
@@ -147,7 +126,9 @@ const onSelect = (event: MouseEvent) => {
           </div>
         </template>
         <div v-else class="flex-1 min-w-0">
-          <span class="px-1 whitespace-nowrap text-ellipsis overflow-hidden">{{ attackSession.title }}</span>
+          <span class="px-1 whitespace-nowrap text-ellipsis overflow-hidden">{{
+            attackSession.title
+          }}</span>
         </div>
       </div>
     </Button>

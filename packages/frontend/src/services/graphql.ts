@@ -1,4 +1,4 @@
-import { type Result } from "backend";
+import { type Result } from "shared";
 
 import { type FrontendSDK } from "../types";
 
@@ -9,7 +9,9 @@ export class GraphQLService {
     this.sdk = sdk;
   }
 
-  async testGraphQLEndpoint(url: string): Promise<Result<{ supportsIntrospection: boolean; schema?: any }>> {
+  async testGraphQLEndpoint(
+    url: string,
+  ): Promise<Result<{ supportsIntrospection: boolean; schema?: any }>> {
     return await this.sdk.backend.testGraphQLEndpoint(url);
   }
 }
