@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import Card from "primevue/card";
-import Checkbox from "primevue/checkbox";
-import Column from "primevue/column";
-import DataTable from "primevue/datatable";
-import Dropdown from "primevue/dropdown";
-import InputNumber from "primevue/inputnumber";
-import InputText from "primevue/inputtext";
 import ProgressBar from "primevue/progressbar";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
@@ -21,17 +15,23 @@ import type {
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { AttackTab } from "@/components/attacks";
+import AttackConfiguration from "@/components/attacks/AttackConfiguration.vue";
+import AttackResultsTable from "@/components/attacks/AttackResultsTable.vue";
+import AttackVectors from "@/components/attacks/AttackVectors.vue";
+import TargetSelection from "@/components/attacks/TargetSelection.vue";
 import { CodeEditor } from "@/components/common";
 import type { ExplorerSession } from "@/components/Explorer/useSessions";
 import { useSDK } from "@/plugins/sdk";
 import { createActivityService } from "@/services/activity";
 import { createBackgroundAttackService } from "@/services/backgroundAttacks";
 import { createReplayService } from "@/services/replay";
+import { createStorageService } from "@/services/storage";
 
 const sdk = useSDK();
 const replayService = createReplayService(sdk);
 const activityService = createActivityService(sdk);
 const backgroundAttackService = createBackgroundAttackService(sdk);
+const storageService = createStorageService(sdk);
 
 defineProps<{
   navigateTo?: (
@@ -406,15 +406,32 @@ const loadAttackSessions = () => {
   }
 };
 
-const createAttackSession = (config: AttackConfig): AttackSession => {
+const createAttackSession = async (config: AttackConfig): Promise<AttackSession> => {
   const now = new Date();
   let domain = "Unknown";
-  try {
-    if (config.targetUrl) {
-      domain = new URL(config.targetUrl).hostname;
+  
+  if (config.targetType === "request" && config.selectedRequestData) {
+    const requestData = config.selectedRequestData as SelectedRequest;
+    if (requestData?.host !== undefined && requestData.host !== "") {
+      domain = requestData.host;
+    } else if (requestData?.id !== undefined) {
+      try {
+        const requestInfoResult = await sdk.backend.getRequestInfo(requestData.id);
+        if (requestInfoResult.kind === "Ok") {
+          domain = requestInfoResult.value.host;
+        }
+      } catch {
+        domain = "Unknown";
+      }
     }
-  } catch (error) {
-    domain = "Unknown";
+  } else {
+    try {
+      if (config.targetUrl && !config.targetUrl.startsWith("request:")) {
+        domain = new URL(config.targetUrl).hostname;
+      }
+    } catch (error) {
+      domain = "Unknown";
+    }
   }
 
   return {
@@ -424,7 +441,7 @@ const createAttackSession = (config: AttackConfig): AttackSession => {
     config: config,
     results: [],
     createdAt: now,
-    status: "running",
+    status: "pending",
     totalFindings: 0,
     criticalFindings: 0,
   };
@@ -487,10 +504,13 @@ const updateAttackSession = (
   sessionId: string,
   updates: Partial<AttackSession>,
 ) => {
-  const session = attackSessions.value.find((s) => s.id === sessionId);
-  if (session) {
-    Object.assign(session, updates);
-    saveAttackSessions();
+  const index = attackSessions.value.findIndex((s) => s.id === sessionId);
+  if (index !== -1 && attackSessions.value[index] !== undefined) {
+    const session = attackSessions.value[index];
+    if (session !== undefined) {
+      attackSessions.value[index] = { ...session, ...updates } as AttackSession;
+      saveAttackSessions();
+    }
   }
 };
 
@@ -526,25 +546,87 @@ const deleteAttackSession = (sessionId: string) => {
 };
 
 const createNewAttackSession = async (showToast = true) => {
-  const newSession: AttackSession = {
-    id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-    title: "New Attack Session",
-    targetUrl: "",
-    config: {
-      targetUrl: "",
-      attackTypes: ["introspection"],
-      maxDepth: 10,
-      maxComplexity: 50,
-      batchSize: 5,
-      targetType: "session",
-    },
-    results: [],
-    createdAt: new Date(),
-    status: "pending",
-    totalFindings: 0,
-    criticalFindings: 0,
-  };
+  let config: AttackConfig;
+  let title = "New Attack Session";
+  let targetUrl = "";
 
+  if (useSelectedRequest.value === true && selectedRequest.value !== undefined) {
+    const request = selectedRequest.value;
+    targetUrl = request.url ?? "";
+    if (targetUrl === "" && request.host !== undefined) {
+      const protocol = request.port === 443 ? "https" : "http";
+      const portPart = request.port === 80 || request.port === 443 ? "" : `:${request.port ?? 80}`;
+      const path = request.path ?? "/graphql";
+      targetUrl = `${protocol}://${request.host}${portPart}${path}`;
+    }
+
+    let domain = "Unknown";
+    if (request.host !== undefined && request.host !== "") {
+      domain = request.host;
+    } else if (request.id !== undefined) {
+      try {
+        const requestInfoResult = await sdk.backend.getRequestInfo(request.id);
+        if (requestInfoResult.kind === "Ok") {
+          domain = requestInfoResult.value.host;
+        }
+      } catch {
+        domain = "Unknown";
+      }
+    }
+
+    title = domain;
+    config = {
+      targetUrl: targetUrl,
+      attackTypes: selectedAttacks.value,
+      maxDepth: maxDepth.value,
+      maxComplexity: 50,
+      batchSize: batchSize.value,
+      targetType: "request",
+      selectedRequestData: request,
+    };
+  } else if (useCustomUrl.value === true && customUrl.value.trim() !== "") {
+    targetUrl = customUrl.value.trim();
+    try {
+      const urlObj = new URL(targetUrl);
+      title = urlObj.hostname;
+    } catch {
+      title = "Custom URL";
+    }
+    config = {
+      targetUrl: targetUrl,
+      attackTypes: selectedAttacks.value,
+      maxDepth: maxDepth.value,
+      maxComplexity: 50,
+      batchSize: batchSize.value,
+      targetType: "custom",
+    };
+  } else {
+    const session = sessions.value.find((s) => s.id === selectedSessionId.value);
+    if (session !== undefined) {
+      targetUrl = session.url;
+      title = session.title;
+      config = {
+        targetUrl: targetUrl,
+        attackTypes: selectedAttacks.value,
+        maxDepth: maxDepth.value,
+        maxComplexity: 50,
+        batchSize: batchSize.value,
+        targetType: "session",
+        sessionId: session.id,
+      };
+    } else {
+      config = {
+        targetUrl: "",
+        attackTypes: selectedAttacks.value,
+        maxDepth: maxDepth.value,
+        maxComplexity: 50,
+        batchSize: batchSize.value,
+        targetType: "session",
+      };
+    }
+  }
+
+  const newSession = await createAttackSession(config);
   attackSessions.value.unshift(newSession);
   selectedAttackSessionId.value = newSession.id;
 
@@ -554,8 +636,6 @@ const createNewAttackSession = async (showToast = true) => {
   responseEditor.value = undefined;
 
   await saveAttackSessions();
-
-  saveAttackSessions();
 
   if (showToast) {
     sdk.window.showToast("New attack session created", { variant: "success" });
@@ -590,56 +670,124 @@ const executeAttacks = async () => {
 
     if (
       useSelectedRequest.value === true &&
-      selectedRequest.value !== undefined &&
-      selectedRequest.value.raw !== undefined &&
-      selectedRequest.value.raw !== ""
+      selectedRequest.value !== undefined
     ) {
-      useOriginalHeaders = true;
-      originalHeaders = {};
+      if (selectedRequest.value.id !== undefined) {
+        try {
+          const requestResult = await sdk.backend.getRequestInfo(selectedRequest.value.id);
+          if (requestResult.kind === "Ok" && selectedRequest.value.raw !== undefined && selectedRequest.value.raw !== "") {
+            useOriginalHeaders = true;
+            originalHeaders = {};
 
-      try {
-        const raw = selectedRequest.value.raw;
+            const originalRaw = selectedRequest.value.raw;
+            const lines = originalRaw.split(/\r?\n/);
+            let inHeaders = false;
 
-        const lines = raw.split(/\r?\n/);
-        let inHeaders = false;
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (line === undefined || line === "") {
+                if (inHeaders === true) break;
+                continue;
+              }
 
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (line === undefined || line === "") {
-            if (inHeaders) break;
-            continue;
-          }
+              const trimmedLine = line.trim();
 
-          const trimmedLine = line.trim();
+              if (i === 0) {
+                inHeaders = true;
+                continue;
+              }
 
-          if (i === 0) {
-            inHeaders = true;
-            continue;
-          }
+              if (inHeaders === true && trimmedLine === "") break;
 
-          if (inHeaders && trimmedLine === "") {
-            break;
-          }
-
-          if (inHeaders && trimmedLine.includes(":")) {
-            const colonIndex = trimmedLine.indexOf(":");
-            const headerName = trimmedLine.substring(0, colonIndex).trim();
-            const headerValue = trimmedLine.substring(colonIndex + 1).trim();
-            if (headerName !== "" && headerValue !== "") {
-              if (headerName.toLowerCase() !== "content-length") {
-                originalHeaders[headerName] = headerValue;
+              if (
+                inHeaders === true &&
+                typeof trimmedLine === "string" &&
+                trimmedLine.includes(":")
+              ) {
+                const colonIndex = trimmedLine.indexOf(":");
+                const headerName = trimmedLine.substring(0, colonIndex).trim();
+                const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+                if (
+                  headerName !== "" &&
+                  headerValue !== "" &&
+                  headerName.toLowerCase() !== "content-length"
+                ) {
+                  originalHeaders[headerName] = headerValue;
+                }
               }
             }
           }
+        } catch (error) {
+          originalHeaders = undefined;
+          useOriginalHeaders = false;
         }
-      } catch (error) {
-        originalHeaders = undefined;
-        useOriginalHeaders = false;
+      } else if (
+        selectedRequest.value.raw !== undefined &&
+        selectedRequest.value.raw !== ""
+      ) {
+        useOriginalHeaders = true;
+        originalHeaders = {};
+
+        try {
+          const raw = selectedRequest.value.raw;
+
+          const lines = raw.split(/\r?\n/);
+          let inHeaders = false;
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line === undefined || line === "") {
+              if (inHeaders) break;
+              continue;
+            }
+
+            const trimmedLine = line.trim();
+
+            if (i === 0) {
+              inHeaders = true;
+              continue;
+            }
+
+            if (inHeaders && trimmedLine === "") {
+              break;
+            }
+
+            if (inHeaders && trimmedLine.includes(":")) {
+              const colonIndex = trimmedLine.indexOf(":");
+              const headerName = trimmedLine.substring(0, colonIndex).trim();
+              const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+              if (headerName !== "" && headerValue !== "") {
+                if (headerName.toLowerCase() !== "content-length") {
+                  originalHeaders[headerName] = headerValue;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          originalHeaders = undefined;
+          useOriginalHeaders = false;
+        }
+      }
+    }
+
+    let finalTargetUrl = targetUrl.value;
+    if (useSelectedRequest.value === true && selectedRequest.value !== undefined) {
+      if (selectedRequest.value.url !== undefined && selectedRequest.value.url !== "" && !selectedRequest.value.url.startsWith("request:")) {
+        finalTargetUrl = selectedRequest.value.url;
+      } else if (selectedRequest.value.id !== undefined) {
+        try {
+          const requestInfoResult = await sdk.backend.getRequestInfo(selectedRequest.value.id);
+          if (requestInfoResult.kind === "Ok") {
+            finalTargetUrl = requestInfoResult.value.url;
+          }
+        } catch {
+          void 0;
+        }
       }
     }
 
     const config: AttackConfig = {
-      targetUrl: targetUrl.value,
+      targetUrl: finalTargetUrl,
       sessionId: selectedSessionId.value ?? undefined,
       attackTypes: selectedAttacks.value,
       maxDepth: maxDepth.value,
@@ -655,6 +803,9 @@ const executeAttacks = async () => {
           : "session",
       selectedRequestData: useSelectedRequest.value
         ? selectedRequest.value
+        : undefined,
+      requestId: useSelectedRequest.value && selectedRequest.value?.id !== undefined
+        ? selectedRequest.value.id
         : undefined,
     };
 
@@ -675,17 +826,32 @@ const executeAttacks = async () => {
     let attackSession: AttackSession;
 
     if (
-      currentSession &&
-      currentSession.title === "New Attack Session" &&
+      currentSession !== undefined &&
       currentSession.status === "pending"
     ) {
       let domain = "Unknown";
-      try {
-        if (config.targetUrl) {
-          domain = new URL(config.targetUrl).hostname;
+      if (config.targetType === "request" && config.selectedRequestData) {
+        const requestData = config.selectedRequestData as SelectedRequest;
+        if (requestData?.host !== undefined && requestData.host !== "") {
+          domain = requestData.host;
+        } else if (requestData?.id !== undefined) {
+          try {
+            const requestInfoResult = await sdk.backend.getRequestInfo(requestData.id);
+            if (requestInfoResult.kind === "Ok") {
+              domain = requestInfoResult.value.host;
+            }
+          } catch {
+            domain = "Unknown";
+          }
         }
-      } catch (error) {
-        domain = "Unknown";
+      } else {
+        try {
+          if (config.targetUrl && !config.targetUrl.startsWith("request:")) {
+            domain = new URL(config.targetUrl).hostname;
+          }
+        } catch (error) {
+          domain = "Unknown";
+        }
       }
       attackSession = {
         ...currentSession,
@@ -702,7 +868,8 @@ const executeAttacks = async () => {
         attackSessions.value[sessionIndex] = attackSession;
       }
     } else {
-      attackSession = createAttackSession(config);
+      const newAttackSession = await createAttackSession(config);
+      attackSession = newAttackSession;
       attackSessions.value.unshift(attackSession); // Add to beginning
       selectedAttackSessionId.value = attackSession.id;
     }
@@ -718,6 +885,7 @@ const executeAttacks = async () => {
       config.targetUrl,
       config.attackTypes,
       attackSession.id,
+      config.requestId,
     );
 
     backgroundAttackService.startBackgroundAttack(
@@ -757,16 +925,18 @@ const cancelAttack = async () => {
   stopAttackPolling();
 
   if (currentActiveAttackId.value !== undefined) {
-    updateAttackSession(currentActiveAttackId.value, {
-      status: "cancelled",
-      completedAt: new Date(),
-    });
+    const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+    if (session !== undefined) {
+      session.status = "cancelled";
+      session.completedAt = new Date();
+      await saveAttackSessions();
+    }
     currentActiveAttackId.value = undefined;
   }
 
   currentAttackSessionId.value = undefined;
-
-  await saveAttackSessions();
+  attackResults.value = [];
+  selectedResult.value = undefined;
 
   sdk.window.showToast("Attack cancelled", { variant: "info" });
 };
@@ -1093,15 +1263,139 @@ const formatDate = (date: Date): string => {
   return date.toLocaleDateString();
 };
 
-onMounted(() => {
+const handleContextAttack = async (event: CustomEvent) => {
+  const requestId = event.detail?.requestId as string | undefined;
+  if (requestId !== undefined && requestId !== null && requestId !== "") {
+    try {
+      const requestInfoResult = await sdk.backend.getRequestInfo(requestId);
+      if (requestInfoResult.kind === "Ok") {
+        selectedRequest.value = {
+          id: requestId,
+          host: requestInfoResult.value.host,
+          port: requestInfoResult.value.port,
+          path: requestInfoResult.value.path,
+          url: requestInfoResult.value.url,
+          method: requestInfoResult.value.method,
+        };
+      } else {
+        selectedRequest.value = { id: requestId };
+      }
+      useSelectedRequest.value = true;
+      useCustomUrl.value = false;
+      selectedSessionId.value = undefined;
+
+      const newSession = await createNewAttackSession(false);
+      if (newSession !== undefined) {
+        selectedAttackSessionId.value = newSession.id;
+        await nextTick();
+      }
+    } catch (error) {
+      sdk.window.showToast(
+        `Failed to create attack session: ${error instanceof Error ? error.message : "Unknown error"}`,
+        { variant: "error" },
+      );
+    }
+  }
+};
+
+const handleAttackProgress = async (event: CustomEvent) => {
+  const { sessionId, status, progress, results } = event.detail;
+
+  if (sessionId === currentAttackSessionId.value) {
+    attackProgress.value = progress;
+    attackResults.value = results;
+
+    if (currentActiveAttackId.value !== undefined) {
+      const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+      if (session !== undefined) {
+        session.results = results;
+        session.status = status.isComplete === true ? "completed" : "running";
+        saveAttackSessions();
+      }
+    }
+
+    if (status.isComplete === true) {
+      isAttacking.value = false;
+      attackProgress.value = 100;
+
+      const totalFindings = results.reduce(
+        (sum: number, r: AttackResult) => sum + r.findings.length,
+        0,
+      );
+      const criticalFindings = results.reduce(
+        (sum: number, r: AttackResult) =>
+          sum +
+          r.findings.filter(
+            (f) => f.severity === "critical" || f.severity === "high",
+          ).length,
+        0,
+      );
+
+      if (currentActiveAttackId.value !== undefined) {
+        const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+        if (session !== undefined) {
+          session.completedAt = new Date();
+          session.status = "completed";
+          session.totalFindings = totalFindings;
+          session.criticalFindings = criticalFindings;
+          session.results = results;
+          await saveAttackSessions();
+        }
+      }
+
+      currentActiveAttackId.value = undefined;
+      currentAttackSessionId.value = undefined;
+
+      sdk.window.showToast("Attack completed successfully", {
+        variant: "success",
+      });
+    }
+  }
+};
+
+const handleAttackComplete = (event: CustomEvent) => {
+  const { sessionId, totalFindings, criticalFindings } = event.detail;
+
+  if (sessionId === currentAttackSessionId.value) {
+    isAttacking.value = false;
+    attackProgress.value = 100;
+
+    if (currentActiveAttackId.value !== undefined) {
+      const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+      if (session !== undefined) {
+        session.completedAt = new Date();
+        session.status = "completed";
+        session.totalFindings = totalFindings ?? 0;
+        session.criticalFindings = criticalFindings ?? 0;
+        saveAttackSessions();
+      }
+      currentActiveAttackId.value = undefined;
+    }
+  }
+};
+
+onMounted(async () => {
+  window.addEventListener(
+    "graphql-analyzer-context-attack",
+    handleContextAttack as unknown as EventListener,
+  );
+  window.addEventListener(
+    "graphql-analyzer-attack-progress",
+    handleAttackProgress as EventListener,
+  );
+  window.addEventListener(
+    "graphql-analyzer-attack-complete",
+    handleAttackComplete as EventListener,
+  );
+
   loadSessions();
   loadAttackSessions();
 
-  const attackSessionId = localStorage.getItem(
+  const attackSessionId = storageService.get<string>(
     "graphql-analyzer-navigate-to-attack",
   );
-  if (attackSessionId !== null && attackSessionId !== "") {
-    localStorage.removeItem("graphql-analyzer-navigate-to-attack");
+  if (attackSessionId !== undefined && attackSessionId !== null && attackSessionId !== "") {
+    await storageService.remove("graphql-analyzer-navigate-to-attack");
 
     nextTick(() => {
       if (attackSessions.value.some((s) => s.id === attackSessionId)) {
@@ -1113,81 +1407,30 @@ onMounted(() => {
     });
   }
 
-  const storedRequest = localStorage.getItem(
-    "graphql-analyzer-context-attack-request",
+  const storedRequestId = storageService.get<string>(
+    "graphql-analyzer-context-attack-request-id",
   );
-  if (storedRequest !== null && storedRequest !== "") {
-    try {
-      const requestData = JSON.parse(storedRequest);
-      selectedRequest.value = requestData;
-      useSelectedRequest.value = true;
-      useCustomUrl.value = false;
-      selectedSessionId.value = undefined;
-
-      if (
-        requestData.raw !== undefined &&
-        requestData.raw !== null &&
-        requestData.raw !== ""
-      ) {
-        try {
-          const raw = requestData.raw;
-          const lines = raw.split(/\r?\n/);
-          const extractedHeaders: Record<string, string> = {};
-          let inHeaders = false;
-
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line === undefined || line === "") {
-              if (inHeaders) break;
-              continue;
-            }
-
-            const trimmedLine = line.trim();
-
-            if (i === 0) {
-              inHeaders = true;
-              continue;
-            }
-
-            if (inHeaders === true && trimmedLine === "") {
-              break;
-            }
-
-            if (
-              inHeaders === true &&
-              typeof trimmedLine === "string" &&
-              trimmedLine.includes(":")
-            ) {
-              const colonIndex = trimmedLine.indexOf(":");
-              const headerName = trimmedLine.substring(0, colonIndex).trim();
-              const headerValue = trimmedLine.substring(colonIndex + 1).trim();
-              if (
-                headerName !== "" &&
-                headerValue !== "" &&
-                headerName.toLowerCase() !== "content-length"
-              ) {
-                extractedHeaders[headerName] = headerValue;
-              }
-            }
-          }
-
-          if (Object.keys(extractedHeaders).length > 0) {
-            customHeaders.value = [];
-            Object.entries(extractedHeaders).forEach(([key, value]) => {
-              customHeaders.value.push({ name: key, value });
-            });
-          }
-        } catch (error) {
-          void 0;
-        }
-      }
-
-      localStorage.removeItem("graphql-analyzer-context-attack-request");
-
-      createNewAttackSession(false);
-    } catch (error) {
-      localStorage.removeItem("graphql-analyzer-context-attack-request");
+  if (storedRequestId !== undefined && storedRequestId !== null && storedRequestId !== "") {
+    const requestInfoResult = await sdk.backend.getRequestInfo(storedRequestId);
+    if (requestInfoResult.kind === "Ok") {
+      selectedRequest.value = {
+        id: storedRequestId,
+        host: requestInfoResult.value.host,
+        port: requestInfoResult.value.port,
+        path: requestInfoResult.value.path,
+        url: requestInfoResult.value.url,
+        method: requestInfoResult.value.method,
+      };
+    } else {
+      selectedRequest.value = { id: storedRequestId };
     }
+    useSelectedRequest.value = true;
+    useCustomUrl.value = false;
+    selectedSessionId.value = undefined;
+
+    await storageService.remove("graphql-analyzer-context-attack-request-id");
+
+    await createNewAttackSession(false);
   }
 
   if (backgroundAttackService.hasBackgroundAttack()) {
@@ -1215,163 +1458,10 @@ onMounted(() => {
     }
   }
 
-  const handleContextAttack = (event: CustomEvent) => {
-    const requestData = event.detail.request as SelectedRequest | undefined;
-    if (requestData !== undefined) {
-      selectedRequest.value = requestData;
-      useSelectedRequest.value = true;
-      useCustomUrl.value = false;
-      selectedSessionId.value = undefined;
-
-      if (
-        requestData.raw !== undefined &&
-        requestData.raw !== null &&
-        requestData.raw !== ""
-      ) {
-        try {
-          const raw = requestData.raw;
-          const lines = raw.split(/\r?\n/);
-          const extractedHeaders: Record<string, string> = {};
-          let inHeaders = false;
-
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line === undefined || line === "") {
-              if (inHeaders) break;
-              continue;
-            }
-
-            const trimmedLine = line.trim();
-
-            if (i === 0) {
-              inHeaders = true;
-              continue;
-            }
-
-            if (inHeaders === true && trimmedLine === "") {
-              break;
-            }
-
-            if (
-              inHeaders === true &&
-              typeof trimmedLine === "string" &&
-              trimmedLine.includes(":")
-            ) {
-              const colonIndex = trimmedLine.indexOf(":");
-              const headerName = trimmedLine.substring(0, colonIndex).trim();
-              const headerValue = trimmedLine.substring(colonIndex + 1).trim();
-              if (
-                headerName !== "" &&
-                headerValue !== "" &&
-                headerName.toLowerCase() !== "content-length"
-              ) {
-                extractedHeaders[headerName] = headerValue;
-              }
-            }
-          }
-
-          if (Object.keys(extractedHeaders).length > 0) {
-            customHeaders.value = [];
-            Object.entries(extractedHeaders).forEach(([key, value]) => {
-              customHeaders.value.push({ name: key, value });
-            });
-          }
-        } catch (error) {
-          void 0;
-        }
-      }
-
-      createNewAttackSession(false);
-    }
-  };
-
-  const handleAttackProgress = (event: CustomEvent) => {
-    const { sessionId, status, progress, results } = event.detail;
-
-    if (sessionId === currentAttackSessionId.value) {
-      attackProgress.value = progress;
-      attackResults.value = results;
-
-      if (currentActiveAttackId.value !== undefined) {
-        updateAttackSession(currentActiveAttackId.value, {
-          results: results,
-          status: status.isComplete === true ? "completed" : "running",
-        });
-      }
-
-      if (status.isComplete === true) {
-        isAttacking.value = false;
-        attackProgress.value = 100;
-
-        const totalFindings = results.reduce(
-          (sum: number, r: AttackResult) => sum + r.findings.length,
-          0,
-        );
-        const criticalFindings = results.reduce(
-          (sum: number, r: AttackResult) =>
-            sum +
-            r.findings.filter(
-              (f) => f.severity === "critical" || f.severity === "high",
-            ).length,
-          0,
-        );
-
-        if (currentActiveAttackId.value !== undefined) {
-          updateAttackSession(currentActiveAttackId.value, {
-            completedAt: new Date(),
-            status: "completed",
-            totalFindings,
-            criticalFindings,
-            results: results,
-          });
-        }
-
-        currentActiveAttackId.value = undefined;
-        currentAttackSessionId.value = undefined;
-
-        sdk.window.showToast("Attack completed successfully", {
-          variant: "success",
-        });
-      }
-    }
-  };
-
-  const handleAttackComplete = (event: CustomEvent) => {
-    const { sessionId, totalFindings, criticalFindings } = event.detail;
-
-    if (sessionId === currentAttackSessionId.value) {
-      isAttacking.value = false;
-      attackProgress.value = 100;
-
-      if (currentActiveAttackId.value !== undefined) {
-        updateAttackSession(currentActiveAttackId.value, {
-          completedAt: new Date(),
-          status: "completed",
-          totalFindings: totalFindings ?? 0,
-          criticalFindings: criticalFindings ?? 0,
-        });
-        currentActiveAttackId.value = undefined;
-      }
-    }
-  };
-
-  window.addEventListener(
-    "graphql-analyzer-context-attack",
-    handleContextAttack as EventListener,
-  );
-  window.addEventListener(
-    "graphql-analyzer-attack-progress",
-    handleAttackProgress as EventListener,
-  );
-  window.addEventListener(
-    "graphql-analyzer-attack-complete",
-    handleAttackComplete as EventListener,
-  );
-
   const eventCleanup = () => {
     window.removeEventListener(
       "graphql-analyzer-context-attack",
-      handleContextAttack as EventListener,
+      handleContextAttack as unknown as EventListener,
     );
     window.removeEventListener(
       "graphql-analyzer-attack-progress",
@@ -1496,195 +1586,19 @@ export default {
             <!-- Configuration Content (only show when session is selected) -->
             <template v-else>
               <!-- Target Selection -->
-              <Card
-                class="h-fit"
-                :pt="{
-                  body: { class: 'h-fit p-0' },
-                  content: { class: 'h-fit flex flex-col' },
-                }"
-              >
-                <template #content>
-                  <div class="p-4">
-                    <!-- Header -->
-                    <div class="mb-4">
-                      <h4 class="text-base font-semibold">Target Selection</h4>
-                    </div>
-
-                    <!-- Target Type Selection -->
-                    <div class="flex flex-wrap gap-6 mb-4">
-                      <!-- Session Option -->
-                      <div class="flex items-center gap-2">
-                        <input
-                          id="target-session"
-                          type="radio"
-                          :checked="!useCustomUrl && !useSelectedRequest"
-                          class="text-primary-600"
-                          @change="
-                            () => {
-                              useCustomUrl = false;
-                              useSelectedRequest = false;
-                            }
-                          "
-                        />
-                        <label for="target-session" class="text-sm font-medium"
-                          >Use Session</label
-                        >
-                      </div>
-
-                      <!-- Custom URL Option -->
-                      <div class="flex items-center gap-2">
-                        <input
-                          id="target-custom"
-                          type="radio"
-                          :checked="useCustomUrl"
-                          class="text-primary-600"
-                          @change="
-                            () => {
-                              useCustomUrl = true;
-                              useSelectedRequest = false;
-                              customHeaders = [];
-                            }
-                          "
-                        />
-                        <label for="target-custom" class="text-sm font-medium"
-                          >Use Custom URL</label
-                        >
-                      </div>
-
-                      <!-- Selected Request Option -->
-                      <div class="flex items-center gap-2">
-                        <input
-                          id="target-request"
-                          type="radio"
-                          :checked="useSelectedRequest"
-                          class="text-primary-600"
-                          :disabled="!selectedRequest"
-                          @change="
-                            () => {
-                              useSelectedRequest = true;
-                              useCustomUrl = false;
-                            }
-                          "
-                        />
-                        <label
-                          for="target-request"
-                          class="text-sm font-medium"
-                          :class="{ 'text-surface-500': !selectedRequest }"
-                        >
-                          Use Selected Request
-                        </label>
-                        <span
-                          v-if="!selectedRequest"
-                          class="text-xs text-surface-500"
-                          >(None selected)</span
-                        >
-                      </div>
-                    </div>
-
-                    <!-- Session Selection -->
-                    <div
-                      v-if="!useCustomUrl && !useSelectedRequest"
-                      class="space-y-2"
-                    >
-                      <label class="block text-sm font-medium"
-                        >Select Session</label
-                      >
-                      <Dropdown
-                        v-model="selectedSessionId"
-                        :options="sessions"
-                        option-label="title"
-                        option-value="id"
-                        placeholder="Choose a scanned session"
-                        class="w-full"
-                        :disabled="sessions.length === 0"
-                      />
-                      <div
-                        v-if="selectedSession"
-                        class="bg-surface-800 rounded p-3 text-sm"
-                      >
-                        <div class="flex items-center gap-2 mb-2">
-                          <div
-                            class="w-2 h-2 rounded-full"
-                            :class="{
-                              'bg-green-500':
-                                selectedSession.status === 'success',
-                              'bg-yellow-500':
-                                selectedSession.status === 'warning',
-                              'bg-red-500': selectedSession.status === 'error',
-                              'bg-surface-500': !selectedSession.status,
-                            }"
-                          ></div>
-                          <span class="font-medium">{{
-                            selectedSession.title
-                          }}</span>
-                        </div>
-                        <div class="text-xs text-surface-400">
-                          <div>
-                            <strong>URL:</strong> {{ selectedSession.url }}
-                          </div>
-                          <div>
-                            <strong>Introspection:</strong>
-                            {{
-                              selectedSession.supportsIntrospection
-                                ? "Supported"
-                                : "Not supported"
-                            }}
-                          </div>
-                          <div>
-                            <strong>Scanned:</strong>
-                            {{ formatDate(selectedSession.createdAt) }}
-                          </div>
-                        </div>
-                      </div>
-                      <div
-                        v-if="sessions.length === 0"
-                        class="text-xs text-yellow-400"
-                      >
-                        No sessions available. Scan an endpoint in the Dashboard
-                        first.
-                      </div>
-                    </div>
-
-                    <!-- Custom URL Input -->
-                    <div v-else-if="useCustomUrl" class="space-y-2">
-                      <label class="block text-sm font-medium"
-                        >GraphQL Endpoint URL</label
-                      >
-                      <InputText
-                        v-model="customUrl"
-                        placeholder="https://example.com/graphql"
-                        class="w-full"
-                      />
-                    </div>
-
-                    <!-- Selected Request Info -->
-                    <div
-                      v-else-if="useSelectedRequest && selectedRequest"
-                      class="space-y-2"
-                    >
-                      <label class="block text-sm font-medium"
-                        >Selected Request</label
-                      >
-                      <div class="bg-surface-800 rounded p-3 text-sm">
-                        <div v-if="selectedRequest?.id !== undefined">
-                          <strong>ID:</strong> {{ selectedRequest.id }}
-                        </div>
-                        <div>
-                          <strong>Host:</strong> {{ selectedRequest.host }}:{{
-                            selectedRequest.port
-                          }}
-                        </div>
-                        <div>
-                          <strong>Path:</strong> {{ selectedRequest.path }}
-                        </div>
-                        <div class="text-xs text-surface-400 mt-1">
-                          Target: {{ targetUrl }}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </Card>
+              <TargetSelection
+                :use-custom-url="useCustomUrl"
+                :use-selected-request="useSelectedRequest"
+                :selected-session-id="selectedSessionId"
+                :sessions="sessions"
+                :custom-url="customUrl"
+                :selected-request="selectedRequest"
+                :target-url="targetUrl"
+                @update:use-custom-url="useCustomUrl = $event"
+                @update:use-selected-request="useSelectedRequest = $event"
+                @update:selected-session-id="selectedSessionId = $event"
+                @update:custom-url="customUrl = $event"
+              ></TargetSelection>
 
               <!-- Attack Selection -->
               <Card
@@ -1778,110 +1692,16 @@ export default {
               </Card>
 
               <!-- Attack Configuration -->
-              <Card
-                class="h-fit"
-                :pt="{
-                  body: { class: 'h-fit p-0' },
-                  content: { class: 'h-fit flex flex-col' },
-                }"
-              >
-                <template #content>
-                  <div class="p-4">
-                    <h4 class="text-base font-semibold mb-3">Configuration</h4>
-
-                    <div class="grid grid-cols-2 gap-3">
-                      <div>
-                        <label class="block text-sm font-medium mb-1"
-                          >Max Depth</label
-                        >
-                        <InputNumber
-                          v-model="maxDepth"
-                          :min="1"
-                          :max="50"
-                          class="w-full"
-                          :disabled="!selectedAttacks.includes('depth-limit')"
-                        />
-                        <div class="text-xs text-surface-400 mt-1">
-                          For depth-limit attacks
-                        </div>
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium mb-1"
-                          >Batch Size</label
-                        >
-                        <InputNumber
-                          v-model="batchSize"
-                          :min="1"
-                          :max="100"
-                          class="w-full"
-                          :disabled="!selectedAttacks.includes('batch-query')"
-                        />
-                        <div class="text-xs text-surface-400 mt-1">
-                          For batch-query attacks
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Custom Headers Section -->
-                    <div class="mt-4">
-                      <div class="flex items-center justify-between mb-2">
-                        <label class="block text-sm font-medium"
-                          >Custom Headers</label
-                        >
-                        <Button
-                          v-tooltip="
-                            customHeaders.length >= 10
-                              ? 'Maximum 10 headers allowed'
-                              : 'Add custom header'
-                          "
-                          :disabled="customHeaders.length >= 10"
-                          icon="fas fa-plus"
-                          size="small"
-                          text
-                          @click="addCustomHeader"
-                        />
-                      </div>
-
-                      <div
-                        v-if="customHeaders.length === 0"
-                        class="text-xs text-surface-400 italic"
-                      >
-                        Click + to add custom headers
-                      </div>
-
-                      <div v-else class="space-y-2">
-                        <div
-                          v-for="(header, index) in customHeaders"
-                          :key="index"
-                          class="flex items-center gap-2"
-                        >
-                          <InputText
-                            v-model="header.name"
-                            placeholder="Header name"
-                            class="flex-1"
-                            size="small"
-                          />
-                          <InputText
-                            v-model="header.value"
-                            placeholder="Header value"
-                            class="flex-1"
-                            size="small"
-                          />
-                          <Button
-                            v-tooltip="'Remove header'"
-                            icon="fas fa-times"
-                            size="small"
-                            text
-                            severity="danger"
-                            @click="removeCustomHeader(index)"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </Card>
+              <AttackConfiguration
+                :max-depth="maxDepth"
+                :batch-size="batchSize"
+                :custom-headers="customHeaders"
+                @update:max-depth="maxDepth = $event"
+                @update:batch-size="batchSize = $event"
+                @update:custom-headers="customHeaders = $event"
+                @add-header="addCustomHeader"
+                @remove-header="removeCustomHeader"
+              ></AttackConfiguration>
 
               <!-- Execute Button -->
               <Card
@@ -1966,202 +1786,13 @@ export default {
                   :min-size="25"
                   class="overflow-hidden"
                 >
-                  <Card
-                    class="h-full"
-                    :pt="{
-                      body: { class: 'h-full p-0' },
-                      content: { class: 'h-full flex flex-col' },
-                    }"
-                  >
-                    <template #content>
-                      <div
-                        class="p-2 border-b border-surface-600 flex-shrink-0"
-                      >
-                        <h4 class="text-base font-semibold">Attack Results</h4>
-                      </div>
-
-                      <div class="flex-1 overflow-auto">
-                        <DataTable
-                          :value="attackResultsTableData"
-                          selection-mode="single"
-                          :selection="selectedResult"
-                          class="w-full"
-                          :pt="{
-                            table: { class: 'text-sm w-full' },
-                            bodyRow: {
-                              class: 'cursor-pointer hover:bg-surface-700',
-                            },
-                          }"
-                          @row-select="selectResult($event.data.rawResult)"
-                        >
-                          <Column
-                            field="id"
-                            header="ID"
-                            class="w-16 text-center"
-                          >
-                            <template #body="{ data }">
-                              <span class="font-mono text-surface-200">{{
-                                data.id
-                              }}</span>
-                            </template>
-                          </Column>
-
-                          <Column
-                            field="statusCode"
-                            header="Status Code"
-                            class="w-32 text-center"
-                          >
-                            <template #body="{ data }">
-                              <span
-                                class="px-2 py-1 rounded text-xs font-medium"
-                                :class="{
-                                  'bg-green-900 text-green-400':
-                                    data.statusCode === 200,
-                                  'bg-red-900 text-red-400':
-                                    data.statusCode >= 400,
-                                  'bg-yellow-900 text-yellow-400':
-                                    data.statusCode >= 300 &&
-                                    data.statusCode < 400,
-                                  'bg-gray-900 text-gray-400':
-                                    data.statusCode === 0,
-                                }"
-                              >
-                                {{ data.statusCode || "-" }}
-                              </span>
-                            </template>
-                          </Column>
-
-                          <Column
-                            field="contentLength"
-                            header="Content Length"
-                            class="w-32 text-center"
-                          >
-                            <template #body="{ data }">
-                              <span class="font-mono text-surface-200">{{
-                                data.contentLength || 0
-                              }}</span>
-                            </template>
-                          </Column>
-
-                          <Column
-                            field="attackType"
-                            header="Attack Type"
-                            class="flex-1"
-                          >
-                            <template #body="{ data }">
-                              <span class="font-medium text-surface-100">{{
-                                getAttackTypeLabel(data.attackType)
-                              }}</span>
-                            </template>
-                          </Column>
-
-                          <Column
-                            field="timing"
-                            header="Time (ms)"
-                            class="w-24 text-center"
-                          >
-                            <template #body="{ data }">
-                              <span class="font-mono text-surface-200">{{
-                                data.timing || 0
-                              }}</span>
-                            </template>
-                          </Column>
-
-                          <Column
-                            field="findings"
-                            header="Findings"
-                            class="w-20 text-center"
-                          >
-                            <template #body="{ data }">
-                              <div class="flex items-center justify-center">
-                                <span
-                                  v-if="data.rawResult.findings.length > 0"
-                                  class="px-2 py-1 rounded text-xs font-medium"
-                                  :class="
-                                    getFindingSeverityClass(
-                                      data.rawResult.findings,
-                                    )
-                                  "
-                                >
-                                  {{ data.rawResult.findings.length }}
-                                </span>
-                                <span v-else class="text-surface-500 text-xs"
-                                  >-</span
-                                >
-                              </div>
-                            </template>
-                          </Column>
-
-                          <Column
-                            field="status"
-                            header="State"
-                            class="w-24 text-center"
-                          >
-                            <template #body="{ data }">
-                              <div class="flex items-center justify-center">
-                                <span
-                                  class="px-2 py-1 rounded text-xs font-medium capitalize"
-                                  :class="{
-                                    'bg-green-900 text-green-400':
-                                      data.status === 'completed',
-                                    'bg-red-900 text-red-400':
-                                      data.status === 'failed',
-                                    'bg-blue-900 text-blue-400':
-                                      data.status === 'running',
-                                    'bg-gray-900 text-gray-400':
-                                      data.status === 'cancelled',
-                                  }"
-                                >
-                                  {{ data.status }}
-                                </span>
-                              </div>
-                            </template>
-                          </Column>
-
-                          <Column header="Actions" class="w-24 text-center">
-                            <template #body="{ data }">
-                              <div
-                                class="flex items-center justify-center gap-1"
-                              >
-                                <!-- Create Finding Button -->
-                                <Button
-                                  v-tooltip="
-                                    data.rawResult.findings.length > 0
-                                      ? 'Create Caido Finding'
-                                      : 'No findings to create'
-                                  "
-                                  :disabled="
-                                    data.rawResult.findings.length === 0
-                                  "
-                                  :severity="
-                                    data.rawResult.findings.length > 0
-                                      ? 'success'
-                                      : 'secondary'
-                                  "
-                                  icon="fas fa-plus"
-                                  size="small"
-                                  text
-                                  @click="
-                                    createFindingFromResult(data.rawResult)
-                                  "
-                                />
-
-                                <!-- Send to Replay Button -->
-                                <Button
-                                  v-tooltip="'Send to Replay'"
-                                  severity="info"
-                                  icon="fas fa-sync"
-                                  size="small"
-                                  text
-                                  @click="sendToReplay(data.rawResult)"
-                                />
-                              </div>
-                            </template>
-                          </Column>
-                        </DataTable>
-                      </div>
-                    </template>
-                  </Card>
+                      <AttackResultsTable
+                        :table-data="attackResultsTableData"
+                        :selected-result="selectedResult"
+                        @select-result="selectResult"
+                        @create-finding="createFindingFromResult"
+                        @send-to-replay="sendToReplay"
+                      ></AttackResultsTable>
                 </SplitterPanel>
 
                 <!-- Details Panel -->

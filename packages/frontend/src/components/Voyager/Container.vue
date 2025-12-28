@@ -4,7 +4,7 @@ import Button from "primevue/button";
 import Card from "primevue/card";
 import InputText from "primevue/inputtext";
 import type { GraphQLField, GraphQLSchema, GraphQLType } from "shared";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 
@@ -458,6 +458,7 @@ const loadSessions = async () => {
       | {
           explorerSessions?: ExplorerSession[];
           selectedExplorerSessionId?: string;
+          "voyager-auto-select-session"?: string;
         }
       | undefined;
 
@@ -470,10 +471,8 @@ const loadSessions = async () => {
         createdAt: new Date(s.createdAt),
       }));
 
-      const autoSelectSessionId = localStorage.getItem(
-        "voyager-auto-select-session",
-      );
-      if (autoSelectSessionId !== null) {
+      const autoSelectSessionId = stored["voyager-auto-select-session"];
+      if (autoSelectSessionId !== undefined && autoSelectSessionId !== null && autoSelectSessionId !== "") {
         const sessionToSelect = sessions.value.find(
           (s: ExplorerSession) => s.id === autoSelectSessionId,
         );
@@ -481,8 +480,10 @@ const loadSessions = async () => {
           await selectSession(autoSelectSessionId);
         }
 
-        localStorage.removeItem("voyager-auto-select-session");
-        return; // Skip setting to undefined
+        const updatedStorage: Record<string, unknown> = { ...stored };
+        delete updatedStorage["voyager-auto-select-session"];
+        await sdk.storage.set(updatedStorage as unknown as Record<string, never>);
+        return;
       }
     } else {
       sessions.value = [];
@@ -1144,8 +1145,20 @@ watch(
   { deep: true },
 );
 
+const handleStorageChange = () => {
+  loadSessions();
+};
+
 onMounted(() => {
   loadSessions();
+
+  window.addEventListener("storage", handleStorageChange);
+  window.addEventListener("graphql-analyzer-sessions-updated", handleStorageChange);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("storage", handleStorageChange);
+  window.removeEventListener("graphql-analyzer-sessions-updated", handleStorageChange);
 });
 </script>
 

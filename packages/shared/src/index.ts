@@ -171,6 +171,7 @@ export type AttackConfig = {
   useOriginalHeaders?: boolean;
   targetType?: "session" | "custom" | "request";
   selectedRequestData?: Record<string, unknown>;
+  requestId?: string;
 };
 
 export type AttackSession = {

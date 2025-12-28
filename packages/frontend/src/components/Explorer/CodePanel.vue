@@ -33,38 +33,42 @@ const copyToClipboard = async () => {
   }
 };
 
-const openInVoyager = () => {
+const openInVoyager = async () => {
   if (props.selectedSession !== undefined) {
-    localStorage.setItem(
-      "voyager-auto-select-session",
-      props.selectedSession.id,
-    );
+    const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
+    currentStorage["voyager-auto-select-session"] = props.selectedSession.id;
+    await sdk.storage.set(currentStorage as unknown as Record<string, never>);
     emit("openInVoyager");
   }
 };
 
-const sendToAttacker = () => {
+const sendToAttacker = async () => {
   if (props.selectedSession === undefined) return;
 
-  const protocol = props.selectedSession.url.startsWith("https")
-    ? "https"
-    : "http";
-  const url = new URL(props.selectedSession.url);
+  const requestId = props.selectedSession?.requestId ?? props.selectedSession?.url?.replace("request:", "");
+  if (requestId === undefined || requestId === null || requestId === "") {
+    sdk.window.showToast("No request ID available", { variant: "error" });
+    return;
+  }
 
-  const requestData = {
-    id: Date.now().toString(),
-    host: url.hostname,
-    port: url.port ? parseInt(url.port) : protocol === "https" ? 443 : 80,
-    path: url.pathname || "/",
-    query: "",
-    headers: {},
-    raw: "",
-  };
+  const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
+  currentStorage["graphql-analyzer-navigate-to"] = "Attacks";
+  currentStorage["graphql-analyzer-navigate-timestamp"] = Date.now().toString();
+  currentStorage["graphql-analyzer-context-attack-request-id"] = requestId;
+  await sdk.storage.set(currentStorage as unknown as Record<string, never>);
 
-  localStorage.setItem(
-    "graphql-analyzer-context-attack-request",
-    JSON.stringify(requestData),
+  window.dispatchEvent(
+    new CustomEvent("graphql-analyzer-navigate", {
+      detail: { page: "Attacks" },
+    }),
   );
+
+  window.dispatchEvent(
+    new CustomEvent("graphql-analyzer-context-attack", {
+      detail: { requestId },
+    }),
+  );
+
   emit("sendToAttacker");
 };
 </script>

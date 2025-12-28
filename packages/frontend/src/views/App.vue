@@ -7,9 +7,11 @@ import { Dashboard } from "@/components/dashboard";
 import { Docs } from "@/components/Docs";
 import { Explorer } from "@/components/Explorer";
 import { Voyager } from "@/components/Voyager";
+import { useSDK } from "@/plugins/sdk";
 
 type PageType = "Dashboard" | "Explorer" | "Voyager" | "Attacks" | "Docs";
 
+const sdk = useSDK();
 const currentPage = ref<PageType>("Dashboard");
 
 const component = computed(() => {
@@ -40,33 +42,66 @@ const handleNavigationEvent = (event: CustomEvent) => {
   }
 };
 
-const checkPendingNavigation = () => {
-  const pendingNav = localStorage.getItem("graphql-analyzer-navigate-to");
-  const navTimestamp = localStorage.getItem(
-    "graphql-analyzer-navigate-timestamp",
-  );
+const checkPendingNavigation = async () => {
+  try {
+    const storage = sdk.storage.get() as
+      | {
+          "graphql-analyzer-navigate-to"?: string;
+          "graphql-analyzer-navigate-timestamp"?: string;
+        }
+      | undefined;
 
-  if (pendingNav !== null && navTimestamp !== null) {
-    const now = Date.now();
-    const parsedTimestamp = parseInt(navTimestamp);
-    const shouldNavigate =
-      !Number.isNaN(parsedTimestamp) && now - parsedTimestamp < 2000;
+    if (
+      storage?.["graphql-analyzer-navigate-to"] !== undefined &&
+      storage["graphql-analyzer-navigate-timestamp"] !== undefined
+    ) {
+      const now = Date.now();
+      const parsedTimestamp = parseInt(
+        storage["graphql-analyzer-navigate-timestamp"],
+      );
+      const shouldNavigate =
+        !Number.isNaN(parsedTimestamp) && now - parsedTimestamp < 5000;
 
-    if (shouldNavigate) {
-      currentPage.value = pendingNav as PageType;
+      if (shouldNavigate) {
+        currentPage.value = storage["graphql-analyzer-navigate-to"] as PageType;
+      }
+
+      const updatedStorage = { ...storage };
+      delete updatedStorage["graphql-analyzer-navigate-to"];
+      delete updatedStorage["graphql-analyzer-navigate-timestamp"];
+      await sdk.storage.set(
+        updatedStorage as unknown as Record<string, never>,
+      );
     }
-
-    localStorage.removeItem("graphql-analyzer-navigate-to");
-    localStorage.removeItem("graphql-analyzer-navigate-timestamp");
+  } catch (error) {
+    void 0;
   }
 };
 
-onMounted(() => {
-  checkPendingNavigation();
+const handleContextScan = (event: CustomEvent) => {
+  const requestId = event.detail?.requestId;
+  if (requestId !== undefined && requestId !== null) {
+    if (currentPage.value !== "Dashboard") {
+      currentPage.value = "Dashboard";
+    }
+    window.dispatchEvent(
+      new CustomEvent("graphql-analyzer-context-scan-request", {
+        detail: { requestId },
+      }),
+    );
+  }
+};
+
+onMounted(async () => {
+  await checkPendingNavigation();
 
   window.addEventListener(
     "graphql-analyzer-navigate",
     handleNavigationEvent as EventListener,
+  );
+  window.addEventListener(
+    "graphql-analyzer-context-scan",
+    handleContextScan as EventListener,
   );
   window.addEventListener("focus", checkPendingNavigation);
 });
@@ -75,6 +110,10 @@ onUnmounted(() => {
   window.removeEventListener(
     "graphql-analyzer-navigate",
     handleNavigationEvent as EventListener,
+  );
+  window.removeEventListener(
+    "graphql-analyzer-context-scan",
+    handleContextScan as EventListener,
   );
   window.removeEventListener("focus", checkPendingNavigation);
 });

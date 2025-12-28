@@ -9,9 +9,21 @@ export const useTreeData = (selectedSession: {
     if (!selectedSession.value?.schema) return [];
 
     const schema = selectedSession.value.schema;
-    const urlDomain = selectedSession.value.url
-      ? new URL(selectedSession.value.url).hostname
-      : "Unknown";
+    let urlDomain = "Unknown";
+    
+    if (selectedSession.value.title && selectedSession.value.title !== "Unknown") {
+      urlDomain = selectedSession.value.title;
+    } else if (selectedSession.value.url) {
+      if (selectedSession.value.url.startsWith("request:")) {
+        urlDomain = selectedSession.value.url.replace("request:", "").substring(0, 8);
+      } else {
+        try {
+          urlDomain = new URL(selectedSession.value.url).hostname;
+        } catch {
+          urlDomain = "Unknown";
+        }
+      }
+    }
 
     const baseTree: Array<{
       key: string;

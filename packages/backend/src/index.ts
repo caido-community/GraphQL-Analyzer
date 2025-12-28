@@ -34,6 +34,15 @@ const testGraphQLEndpoint = async (
   return await graphqlService.testEndpoint(url, customHeaders);
 };
 
+const testGraphQLEndpointFromRequest = async (
+  sdk: SDK,
+  requestId: string,
+  customHeaders?: Record<string, string>,
+) => {
+  const graphqlService = new GraphQLService(sdk);
+  return await graphqlService.testEndpointFromRequest(requestId, customHeaders);
+};
+
 const generateGraphQLQuery = (
   sdk: SDK,
   field: {
@@ -102,6 +111,39 @@ const getAttackTemplates = (sdk: SDK) => {
   return attackService.generateAttackTemplates();
 };
 
+const getRequestInfo = async (
+  sdk: SDK,
+  requestId: string,
+): Promise<Result<{ host: string; port: number; path: string; url: string; method: string }>> => {
+  try {
+    if (!requestId) {
+      return { kind: "Error", error: "No request ID provided" };
+    }
+
+    const result = await sdk.requests.get(requestId);
+    if (!result) {
+      return { kind: "Error", error: "Request not found" };
+    }
+
+    const request = result.request;
+    return {
+      kind: "Ok",
+      value: {
+        host: request.getHost(),
+        port: request.getPort(),
+        path: request.getPath(),
+        url: request.getUrl(),
+        method: request.getMethod(),
+      },
+    };
+  } catch (error) {
+    return {
+      kind: "Error",
+      error: `Failed to get request info: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+};
+
 const createCaidoFinding = async (
   sdk: SDK,
   findingData: { title: string; description: string },
@@ -143,6 +185,7 @@ const createCaidoFinding = async (
 
 export type API = DefineAPI<{
   testGraphQLEndpoint: typeof testGraphQLEndpoint;
+  testGraphQLEndpointFromRequest: typeof testGraphQLEndpointFromRequest;
   generateGraphQLQuery: typeof generateGraphQLQuery;
   executeGraphQLQuery: typeof executeGraphQLQuery;
   executeGraphQLAttacks: typeof executeGraphQLAttacks;
@@ -151,12 +194,14 @@ export type API = DefineAPI<{
   cancelAttackSession: typeof cancelAttackSession;
   getAttackTemplates: typeof getAttackTemplates;
   createCaidoFinding: typeof createCaidoFinding;
+  getRequestInfo: typeof getRequestInfo;
 }>;
 
 export function init(sdk: SDK<API>) {
   setSDK(sdk);
 
   sdk.api.register("testGraphQLEndpoint", testGraphQLEndpoint);
+  sdk.api.register("testGraphQLEndpointFromRequest", testGraphQLEndpointFromRequest);
   sdk.api.register("generateGraphQLQuery", generateGraphQLQuery);
   sdk.api.register("executeGraphQLQuery", executeGraphQLQuery);
   sdk.api.register("executeGraphQLAttacks", executeGraphQLAttacks);
@@ -165,6 +210,7 @@ export function init(sdk: SDK<API>) {
   sdk.api.register("cancelAttackSession", cancelAttackSession);
   sdk.api.register("getAttackTemplates", getAttackTemplates);
   sdk.api.register("createCaidoFinding", createCaidoFinding);
+  sdk.api.register("getRequestInfo", getRequestInfo);
 
   sdk.console.log("GraphQL Analyzer backend initialized");
 }

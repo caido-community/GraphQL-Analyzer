@@ -27,7 +27,7 @@ export class GraphQLAttackService {
 
   constructor(private sdk: SDK) {}
 
-  private addHeaders(spec: RequestSpec, config: AttackConfig) {
+  private async addHeaders(spec: RequestSpec, config: AttackConfig): Promise<void> {
     let finalHeaders: Record<string, string> = {};
 
     let hostHeader = "";
@@ -53,18 +53,65 @@ export class GraphQLAttackService {
       hostHeader = "";
     }
 
-    if (config.useOriginalHeaders === true && config.originalHeaders) {
-      finalHeaders = { ...config.originalHeaders };
+    if (config.requestId !== undefined && config.requestId !== null && config.requestId !== "") {
+      try {
+        const requestResult = await this.sdk.requests.get(config.requestId);
+        if (requestResult !== undefined && requestResult.request !== undefined) {
+          const originalRaw = requestResult.request.getRaw().toText();
+          const lines = originalRaw.split(/\r?\n/);
+          let inHeaders = false;
 
-      finalHeaders["Content-Type"] = "application/json";
-      finalHeaders["Accept"] = "application/json";
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line === undefined || line === "") {
+              if (inHeaders === true) break;
+              continue;
+            }
 
-      if (hostHeader) {
-        finalHeaders["Host"] = hostHeader;
+            const trimmedLine = line.trim();
+
+            if (i === 0) {
+              inHeaders = true;
+              continue;
+            }
+
+            if (inHeaders === true && trimmedLine === "") break;
+
+            if (
+              inHeaders === true &&
+              typeof trimmedLine === "string" &&
+              trimmedLine.includes(":")
+            ) {
+              const colonIndex = trimmedLine.indexOf(":");
+              const headerName = trimmedLine.substring(0, colonIndex).trim();
+              const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+              if (
+                headerName !== "" &&
+                headerValue !== "" &&
+                headerName.toLowerCase() !== "content-length"
+              ) {
+                finalHeaders[headerName] = headerValue;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        this.sdk.console.error(`Failed to get request headers: ${error instanceof Error ? error.message : String(error)}`);
       }
+    } else if (config.useOriginalHeaders === true && config.originalHeaders) {
+      finalHeaders = { ...config.originalHeaders };
+    }
 
-      delete finalHeaders["Content-Length"];
-    } else {
+    finalHeaders["Content-Type"] = "application/json";
+    finalHeaders["Accept"] = "application/json";
+
+    if (hostHeader) {
+      finalHeaders["Host"] = hostHeader;
+    }
+
+    delete finalHeaders["Content-Length"];
+
+    if (Object.keys(finalHeaders).length === 0) {
       finalHeaders = {
         "Content-Type": "application/json",
         Accept: "application/json",
@@ -212,7 +259,7 @@ export class GraphQLAttackService {
 
           const spec = new RequestSpec(config.targetUrl);
           spec.setMethod("POST");
-          this.addHeaders(spec, config);
+          await this.addHeaders(spec, config);
           spec.setBody(payload);
 
           const startTime = Date.now();
@@ -358,7 +405,7 @@ export class GraphQLAttackService {
 
         const spec = new RequestSpec(config.targetUrl);
         spec.setMethod("POST");
-        this.addHeaders(spec, config);
+        await this.addHeaders(spec, config);
         spec.setBody(payload);
 
         const startTime = Date.now();
@@ -500,7 +547,7 @@ export class GraphQLAttackService {
 
         const spec = new RequestSpec(config.targetUrl);
         spec.setMethod("POST");
-        this.addHeaders(spec, config);
+        await this.addHeaders(spec, config);
         spec.setBody(payload);
 
         const startTime = Date.now();
@@ -617,7 +664,7 @@ export class GraphQLAttackService {
 
         const spec = new RequestSpec(config.targetUrl);
         spec.setMethod("POST");
-        this.addHeaders(spec, config);
+        await this.addHeaders(spec, config);
         spec.setBody(payload);
 
         const startTime = Date.now();
@@ -764,7 +811,7 @@ export class GraphQLAttackService {
 
         const spec = new RequestSpec(config.targetUrl);
         spec.setMethod("POST");
-        this.addHeaders(spec, config);
+        await this.addHeaders(spec, config);
         spec.setBody(payload);
 
         const startTime = Date.now();

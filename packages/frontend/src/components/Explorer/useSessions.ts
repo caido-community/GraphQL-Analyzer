@@ -11,6 +11,7 @@ export type ExplorerSession = {
   supportsIntrospection: boolean;
   createdAt: Date;
   status: string;
+  requestId?: string;
 };
 
 export const useSessions = () => {
@@ -32,6 +33,7 @@ export const useSessions = () => {
       currentStorage.selectedExplorerSessionId = selectedSessionId.value;
 
       await sdk.storage.set(currentStorage as unknown as Record<string, never>);
+      window.dispatchEvent(new CustomEvent("graphql-analyzer-sessions-updated"));
     } catch (error) {
       sdk.window.showToast("Failed to save session data", { variant: "error" });
     }

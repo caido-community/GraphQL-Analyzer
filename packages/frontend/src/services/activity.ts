@@ -11,14 +11,18 @@ export class ActivityService {
     targetUrl: string,
     attackTypes: string[],
     attackSessionId: string,
+    requestId?: string,
   ): Promise<void> {
     try {
       const domain = this.getDomainName(targetUrl);
       const attackTypesList = attackTypes.join(", ");
+      const title = requestId
+        ? `Attack run on ${domain} (${requestId.substring(0, 8)})`
+        : `Attack run on ${domain}`;
 
       const activityData = {
         id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-        title: `Attack run on ${domain}`,
+        title: title,
         url: targetUrl,
         description: `GraphQL attacks: ${attackTypesList}`,
         createdAt: new Date(),

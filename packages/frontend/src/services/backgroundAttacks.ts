@@ -1,55 +1,58 @@
 import type { FrontendSDK } from "../types";
+import { createStorageService } from "./storage";
 
 export class BackgroundAttackService {
   private sdk: FrontendSDK;
+  private storageService;
   private pollInterval: number | undefined = undefined;
   private static instance: BackgroundAttackService | undefined = undefined;
 
   constructor(sdk: FrontendSDK) {
     this.sdk = sdk;
+    this.storageService = createStorageService(sdk);
   }
 
-  startBackgroundAttack(sessionId: string, attackTypes: string[]): void {
-    this.stopBackgroundAttack();
+  async startBackgroundAttack(sessionId: string, attackTypes: string[]): Promise<void> {
+    await this.stopBackgroundAttack();
 
-    localStorage.setItem(
-      "graphql-analyzer-background-attack",
-      JSON.stringify({
-        sessionId,
-        attackTypes,
-        startTime: Date.now(),
-      }),
-    );
+    await this.storageService.set("graphql-analyzer-background-attack", {
+      sessionId,
+      attackTypes,
+      startTime: Date.now(),
+    });
 
     this.startPolling(sessionId);
   }
 
-  stopBackgroundAttack(): void {
+  async stopBackgroundAttack(): Promise<void> {
     if (this.pollInterval !== undefined) {
       clearInterval(this.pollInterval);
       this.pollInterval = undefined;
     }
 
-    localStorage.removeItem("graphql-analyzer-background-attack");
+    await this.storageService.remove("graphql-analyzer-background-attack");
   }
 
   hasBackgroundAttack(): boolean {
-    const stored = localStorage.getItem("graphql-analyzer-background-attack");
-    return stored !== null && stored !== "";
+    const stored = this.storageService.get<{
+      sessionId: string;
+      attackTypes: string[];
+      startTime: number;
+    }>("graphql-analyzer-background-attack");
+    return stored !== undefined;
   }
 
   resumeBackgroundAttack(): void {
-    const stored = localStorage.getItem("graphql-analyzer-background-attack");
-    if (stored !== null && stored !== "") {
+    const stored = this.storageService.get<{
+      sessionId: string;
+      attackTypes: string[];
+      startTime: number;
+    }>("graphql-analyzer-background-attack");
+    if (stored !== undefined) {
       try {
-        const attackInfo = JSON.parse(stored) as {
-          sessionId: string;
-          attackTypes: string[];
-          startTime: number;
-        };
-        this.startPolling(attackInfo.sessionId);
+        this.startPolling(stored.sessionId);
       } catch (error) {
-        localStorage.removeItem("graphql-analyzer-background-attack");
+        void this.storageService.remove("graphql-analyzer-background-attack");
       }
     }
   }
@@ -57,19 +60,11 @@ export class BackgroundAttackService {
   getBackgroundAttackInfo():
     | { sessionId: string; attackTypes: string[]; startTime: number }
     | undefined {
-    const stored = localStorage.getItem("graphql-analyzer-background-attack");
-    if (stored !== null && stored !== "") {
-      try {
-        return JSON.parse(stored) as {
-          sessionId: string;
-          attackTypes: string[];
-          startTime: number;
-        };
-      } catch (error) {
-        return undefined;
-      }
-    }
-    return undefined;
+    return this.storageService.get<{
+      sessionId: string;
+      attackTypes: string[];
+      startTime: number;
+    }>("graphql-analyzer-background-attack");
   }
 
   private startPolling(sessionId: string): void {
@@ -113,7 +108,7 @@ export class BackgroundAttackService {
         );
 
         if (status.isComplete === true) {
-          this.stopBackgroundAttack();
+          void this.stopBackgroundAttack();
 
           const results = status.results ?? [];
           const totalFindings = results.reduce(
@@ -151,7 +146,7 @@ export class BackgroundAttackService {
         errorCount++;
 
         if (errorCount >= maxErrors) {
-          this.stopBackgroundAttack();
+          void this.stopBackgroundAttack();
           this.sdk.window.showToast(
             `Attack monitoring stopped due to repeated errors`,
             { variant: "error" },

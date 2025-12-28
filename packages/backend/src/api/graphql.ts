@@ -100,6 +100,131 @@ const INTROSPECTION_QUERY = `
 export class GraphQLService {
   constructor(private sdk: SDK) {}
 
+  async testEndpointFromRequest(
+    requestId: string,
+    customHeaders?: Record<string, string>,
+  ): Promise<
+    Result<{ supportsIntrospection: boolean; schema?: GraphQLSchema }>
+  > {
+    try {
+      const requestResult = await this.sdk.requests.get(requestId);
+      if (!requestResult) {
+        return {
+          kind: "Error",
+          error: "Request not found",
+        };
+      }
+
+      const originalRequest = requestResult.request;
+      const originalUrl = originalRequest.getUrl();
+
+      if (!originalUrl.startsWith("http://") && !originalUrl.startsWith("https://")) {
+        return {
+          kind: "Error",
+          error: "Request URL must start with http:// or https://",
+        };
+      }
+
+      const originalRaw = originalRequest.getRaw().toText();
+      const lines = originalRaw.split(/\r?\n/);
+      const originalHeaders: Record<string, string> = {};
+
+      let inHeaders = false;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line === undefined || line === "") {
+          if (inHeaders === true) break;
+          continue;
+        }
+
+        const trimmedLine = line.trim();
+
+        if (i === 0) {
+          inHeaders = true;
+          continue;
+        }
+
+        if (inHeaders === true && trimmedLine === "") break;
+
+        if (
+          inHeaders === true &&
+          typeof trimmedLine === "string" &&
+          trimmedLine.includes(":")
+        ) {
+          const colonIndex = trimmedLine.indexOf(":");
+          const headerName = trimmedLine.substring(0, colonIndex).trim();
+          const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+          if (
+            headerName !== "" &&
+            headerValue !== "" &&
+            headerName.toLowerCase() !== "content-length"
+          ) {
+            originalHeaders[headerName] = headerValue;
+          }
+        }
+      }
+
+      const headers: Record<string, string> = {
+        ...originalHeaders,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "Caido/GraphQL-Analyzer",
+      };
+
+      if (customHeaders && typeof customHeaders === "object") {
+        Object.entries(customHeaders).forEach(([key, value]) => {
+          if (
+            key &&
+            value &&
+            typeof key === "string" &&
+            typeof value === "string" &&
+            key.trim() &&
+            value.trim()
+          ) {
+            headers[key] = String(value);
+          }
+        });
+      }
+
+      for (const [key, value] of Object.entries(headers)) {
+        if (
+          typeof value !== "string" ||
+          value === "" ||
+          value === "null" ||
+          value === "undefined"
+        ) {
+          delete headers[key];
+        }
+      }
+
+      const requestBody = JSON.stringify({
+        query: INTROSPECTION_QUERY,
+      });
+
+      const spec = new RequestSpec(originalUrl);
+      spec.setMethod("POST");
+
+      for (const [name, value] of Object.entries(headers)) {
+        if (value) {
+          spec.setHeader(name, value);
+        }
+      }
+
+      spec.setBody(requestBody);
+
+      const result = await this.sdk.requests.send(spec);
+
+      return this.processIntrospectionResponse(result);
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return {
+        kind: "Error",
+        error: `Failed to test GraphQL endpoint: ${errorMsg}`,
+      };
+    }
+  }
+
   async testEndpoint(
     url: string,
     customHeaders?: Record<string, string>,
@@ -188,68 +313,82 @@ export class GraphQLService {
 
       const result = await this.sdk.requests.send(spec);
 
-      if (result.response === undefined) {
+      return this.processIntrospectionResponse(result);
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return {
+        kind: "Error",
+        error: `Failed to test GraphQL endpoint: ${errorMsg}`,
+      };
+    }
+  }
+
+  private processIntrospectionResponse(
+    result: Awaited<ReturnType<typeof this.sdk.requests.send>>,
+  ): Result<{ supportsIntrospection: boolean; schema?: GraphQLSchema }> {
+    if (result.response === undefined) {
+      return {
+        kind: "Error",
+        error: "No response received from the endpoint",
+      };
+    }
+
+    const statusCode = result.response.getCode();
+    const responseBody = result.response.getBody()?.toText() ?? "";
+
+    if (statusCode === 401) {
+      return {
+        kind: "Error",
+        error: `Authentication required (HTTP 401). Add Authorization, Cookie, or API key headers.`,
+      };
+    }
+
+    if (statusCode === 403) {
+      return {
+        kind: "Error",
+        error: `Access forbidden (HTTP 403). Your credentials lack required permissions.`,
+      };
+    }
+
+    if (statusCode === 404) {
+      return {
+        kind: "Error",
+        error: `Endpoint not found (HTTP 404). Verify the URL is correct.`,
+      };
+    }
+
+    if (statusCode === 405) {
+      return {
+        kind: "Error",
+        error: `Method not allowed (HTTP 405). This endpoint may not support POST requests.`,
+      };
+    }
+
+    if (statusCode >= 500) {
+      return {
+        kind: "Error",
+        error: `Server error (HTTP ${statusCode}). The server is experiencing issues.`,
+      };
+    }
+
+    if (statusCode !== 200) {
+      const trimmed = responseBody.trim();
+      if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
         return {
           kind: "Error",
-          error: "No response received from the endpoint",
+          error: `Received HTML page (HTTP ${statusCode}). This may not be a GraphQL endpoint.`,
         };
       }
+      const preview = responseBody.substring(0, 150);
+      return {
+        kind: "Error",
+        error: `Unexpected response (HTTP ${statusCode}): ${preview}...`,
+      };
+    }
 
-      const statusCode = result.response.getCode();
-      const responseBody = result.response.getBody()?.toText() ?? "";
-
-      if (statusCode === 401) {
-        return {
-          kind: "Error",
-          error: `Authentication required (HTTP 401). Add Authorization, Cookie, or API key headers.`,
-        };
-      }
-
-      if (statusCode === 403) {
-        return {
-          kind: "Error",
-          error: `Access forbidden (HTTP 403). Your credentials lack required permissions.`,
-        };
-      }
-
-      if (statusCode === 404) {
-        return {
-          kind: "Error",
-          error: `Endpoint not found (HTTP 404). Verify the URL is correct.`,
-        };
-      }
-
-      if (statusCode === 405) {
-        return {
-          kind: "Error",
-          error: `Method not allowed (HTTP 405). This endpoint may not support POST requests.`,
-        };
-      }
-
-      if (statusCode >= 500) {
-        return {
-          kind: "Error",
-          error: `Server error (HTTP ${statusCode}). The server is experiencing issues.`,
-        };
-      }
-
-      if (statusCode !== 200) {
-        const trimmed = responseBody.trim();
-        if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
-          return {
-            kind: "Error",
-            error: `Received HTML page (HTTP ${statusCode}). This may not be a GraphQL endpoint.`,
-          };
-        }
-        const preview = responseBody.substring(0, 150);
-        return {
-          kind: "Error",
-          error: `Unexpected response (HTTP ${statusCode}): ${preview}...`,
-        };
-      }
-
-      try {
-        const jsonResponse = JSON.parse(responseBody);
+    try {
+      const jsonResponse = JSON.parse(responseBody);
 
         if (
           Array.isArray(jsonResponse.errors) &&
@@ -312,39 +451,6 @@ export class GraphQLService {
         const preview = responseBody.substring(0, 100);
         return { kind: "Error", error: `Invalid JSON response: ${preview}...` };
       }
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-
-      if (
-        errorMessage.includes("ECONNREFUSED") ||
-        errorMessage.includes("ENOTFOUND")
-      ) {
-        return {
-          kind: "Error",
-          error: `Cannot connect to endpoint. Check the URL and ensure the server is running.`,
-        };
-      }
-
-      if (errorMessage.includes("timeout")) {
-        return {
-          kind: "Error",
-          error: `Request timeout. The endpoint did not respond in time.`,
-        };
-      }
-
-      if (
-        errorMessage.includes("SSL") ||
-        errorMessage.includes("certificate")
-      ) {
-        return {
-          kind: "Error",
-          error: `SSL/Certificate error. Check HTTPS connection.`,
-        };
-      }
-
-      return { kind: "Error", error: `Connection failed: ${errorMessage}` };
-    }
   }
 
   private parseIntrospectionResult(

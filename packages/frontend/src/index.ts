@@ -77,117 +77,39 @@ export const init = (sdk: FrontendSDK) => {
 
   sdk.commands.register("graphql-analyzer-scan", {
     name: "Scan GraphQL Endpoint",
-    run: (context) => {
-      type RequestData = {
-        host?: string;
-        port?: number;
-        path?: string;
-        query?: string;
-        getRaw?: () => { toText?: () => string } | undefined;
-      };
-      let requestData: RequestData | undefined = undefined;
+    run: async (context) => {
+      let requestId: string | undefined = undefined;
 
       if (context.type === "RequestRowContext") {
         if (context.requests.length > 0) {
-          requestData = context.requests[0];
+          const request = context.requests[0];
+          if (request !== undefined && request.id !== undefined) {
+            requestId = request.id.toString();
+          }
         }
       } else if (context.type === "RequestContext") {
-        requestData = context.request;
+        const request = context.request;
+        if (request !== undefined && request.type === "RequestFull" && request.id !== undefined) {
+          requestId = request.id.toString();
+        }
       }
 
-      if (requestData === undefined) {
+      if (requestId === undefined) {
         sdk.window.showToast("No request selected", { variant: "warning" });
         return;
       }
 
-      if (requestData.host === undefined || requestData.port === undefined) {
-        sdk.window.showToast("Invalid request data", { variant: "error" });
-        return;
-      }
-
-      const protocol = requestData.port === 443 ? "https" : "http";
-      const portPart =
-        requestData.port === 80 || requestData.port === 443
-          ? ""
-          : `:${requestData.port}`;
-
-      const path = requestData.path ?? "/";
-      const query = requestData.query ?? "";
-      const queryString = query !== "" ? `?${query}` : "";
-
-      let graphqlUrl = `${protocol}://${requestData.host}${portPart}${path}${queryString}`;
-
-      if (!graphqlUrl.toLowerCase().includes("graphql") && queryString === "") {
-        graphqlUrl = `${protocol}://${requestData.host}${portPart}/graphql`;
-      }
-
-      const headers: Record<string, string> = {};
-
-      if (
-        context.type === "RequestContext" &&
-        requestData.getRaw !== undefined
-      ) {
-        try {
-          const rawData = requestData.getRaw();
-          const rawString = rawData?.toText?.() ?? "";
-
-          if (rawString !== "") {
-            const lines = rawString.split(/\r?\n/);
-            let inHeaders = false;
-
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i];
-              if (line === undefined || line === "") {
-                if (inHeaders === true) break;
-                continue;
-              }
-
-              const trimmedLine = line.trim();
-
-              if (i === 0) {
-                inHeaders = true;
-                continue;
-              }
-
-              if (inHeaders === true && trimmedLine === "") break;
-
-              if (
-                inHeaders === true &&
-                typeof trimmedLine === "string" &&
-                trimmedLine.includes(":")
-              ) {
-                const colonIndex = trimmedLine.indexOf(":");
-                const headerName = trimmedLine.substring(0, colonIndex).trim();
-                const headerValue = trimmedLine
-                  .substring(colonIndex + 1)
-                  .trim();
-                if (
-                  headerName !== "" &&
-                  headerValue !== "" &&
-                  headerName.toLowerCase() !== "content-length"
-                ) {
-                  headers[headerName] = headerValue;
-                }
-              }
-            }
-          }
-        } catch (error) {
-          void 0;
-        }
-      }
-
       window.location.hash = "/graphql-analyzer";
 
-      localStorage.setItem("graphql-analyzer-navigate-to", "Dashboard");
-      localStorage.setItem(
-        "graphql-analyzer-navigate-timestamp",
-        Date.now().toString(),
-      );
-      localStorage.setItem("graphql-analyzer-context-scan-url", graphqlUrl);
-      localStorage.setItem(
-        "graphql-analyzer-context-scan-headers",
-        JSON.stringify(headers),
-      );
+      const navigationData = {
+        page: "Dashboard" as const,
+        timestamp: Date.now(),
+      };
+      const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
+      currentStorage["graphql-analyzer-navigate-to"] = navigationData.page;
+      currentStorage["graphql-analyzer-navigate-timestamp"] = navigationData.timestamp.toString();
+      currentStorage["graphql-analyzer-context-scan-request-id"] = requestId;
+      await sdk.storage.set(currentStorage as unknown as Record<string, never>);
 
       window.dispatchEvent(
         new CustomEvent("graphql-analyzer-navigate", {
@@ -197,11 +119,9 @@ export const init = (sdk: FrontendSDK) => {
 
       window.dispatchEvent(
         new CustomEvent("graphql-analyzer-context-scan", {
-          detail: { url: graphqlUrl, headers },
+          detail: { requestId },
         }),
       );
-
-      sdk.window.showToast(`Scanning: ${graphqlUrl}`, { variant: "info" });
     },
     group: "GraphQL Analyzer",
     when: (context) => {
@@ -214,72 +134,39 @@ export const init = (sdk: FrontendSDK) => {
 
   sdk.commands.register("graphql-analyzer-attack", {
     name: "Attack GraphQL Endpoint",
-    run: (context) => {
-      type RequestData = {
-        id?: { toString?: () => string };
-        host?: string;
-        port?: number;
-        path?: string;
-        query?: string;
-        headers?: Record<string, string>;
-        getRaw?: () => { toText?: () => string } | undefined;
-      };
-      let selectedRequest: RequestData | undefined = undefined;
+    run: async (context) => {
+      let requestId: string | undefined = undefined;
 
       if (context.type === "RequestRowContext") {
-        selectedRequest = context.requests[0] as RequestData | undefined;
+        if (context.requests.length > 0) {
+          const request = context.requests[0];
+          if (request !== undefined && request.id !== undefined) {
+            requestId = request.id.toString();
+          }
+        }
       } else if (context.type === "RequestContext") {
-        selectedRequest = context.request as RequestData | undefined;
+        const request = context.request;
+        if (request !== undefined && request.type === "RequestFull" && request.id !== undefined) {
+          requestId = request.id.toString();
+        }
       }
 
-      if (selectedRequest === undefined) {
+      if (requestId === undefined) {
         sdk.window.showToast("No request selected", { variant: "warning" });
-        return;
-      }
-
-      if (
-        selectedRequest.host === undefined ||
-        selectedRequest.port === undefined
-      ) {
-        sdk.window.showToast("Invalid request data", { variant: "error" });
         return;
       }
 
       window.location.hash = "/graphql-analyzer";
 
-      localStorage.setItem("graphql-analyzer-navigate-to", "Attacks");
-      localStorage.setItem(
-        "graphql-analyzer-navigate-timestamp",
-        Date.now().toString(),
-      );
-
-      let rawString = "";
-      if (
-        context.type === "RequestContext" &&
-        selectedRequest.getRaw !== undefined
-      ) {
-        try {
-          const rawData = selectedRequest.getRaw();
-          rawString = rawData?.toText?.() ?? "";
-        } catch (error) {
-          void 0;
-        }
-      }
-
-      const requestData = {
-        id: selectedRequest.id?.toString?.() ?? "",
-        host: selectedRequest.host ?? "",
-        port: selectedRequest.port ?? 80,
-        path: selectedRequest.path ?? "/",
-        query: selectedRequest.query ?? "",
-        headers: selectedRequest.headers ?? {},
-        raw: rawString,
+      const navigationData = {
+        page: "Attacks" as const,
+        timestamp: Date.now(),
       };
-
-      localStorage.setItem(
-        "graphql-analyzer-context-attack-request",
-        JSON.stringify(requestData),
-      );
+      const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
+      currentStorage["graphql-analyzer-navigate-to"] = navigationData.page;
+      currentStorage["graphql-analyzer-navigate-timestamp"] = navigationData.timestamp.toString();
+      currentStorage["graphql-analyzer-context-attack-request-id"] = requestId;
+      await sdk.storage.set(currentStorage as unknown as Record<string, never>);
 
       window.dispatchEvent(
         new CustomEvent("graphql-analyzer-navigate", {
@@ -289,11 +176,9 @@ export const init = (sdk: FrontendSDK) => {
 
       window.dispatchEvent(
         new CustomEvent("graphql-analyzer-context-attack", {
-          detail: { request: requestData },
+          detail: { requestId },
         }),
       );
-
-      sdk.window.showToast("Sending to attack page...", { variant: "info" });
     },
     group: "GraphQL Analyzer",
     when: (context) => {

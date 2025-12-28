@@ -6,11 +6,14 @@ import TabView from "primevue/tabview";
 import { computed, onMounted, ref } from "vue";
 
 import CodeEditor from "../components/common/CodeEditor.vue";
+import { createStorageService } from "../services/storage";
 
 const props = defineProps<{
   sdk: API;
   request: RequestFull;
 }>();
+
+const storageService = createStorageService(props.sdk);
 
 const editableQuery = ref("");
 const editableVariables = ref("{}");
@@ -284,94 +287,68 @@ const copyQuery = async () => {
   }
 };
 
-const saveToScanner = () => {
-  const protocol = props.request.port === 443 ? "https" : "http";
-  const portPart =
-    props.request.port === 80 || props.request.port === 443
-      ? ""
-      : `:${props.request.port}`;
-  let graphqlUrl = `${protocol}://${props.request.host}${portPart}${props.request.path}`;
-
-  if (!graphqlUrl.toLowerCase().includes("graphql")) {
-    graphqlUrl = `${protocol}://${props.request.host}${portPart}/graphql`;
+const saveToScanner = async () => {
+  const requestId = props.request.id?.toString();
+  if (requestId === undefined) {
+    props.sdk.window.showToast("No request ID available", { variant: "error" });
+    return;
   }
-
-  const headers: Record<string, string> = {};
-  if (parsedHttp.value?.headers) {
-    Object.entries(parsedHttp.value.headers).forEach(([key, value]) => {
-      if (key.toLowerCase() !== "content-length" && key && value) {
-        headers[key] = typeof value === "string" ? value : String(value);
-      }
-    });
-  }
-
-  props.sdk.window.showToast(`Scanning GraphQL endpoint: ${graphqlUrl}`, {
-    variant: "info",
-  });
 
   window.location.hash = "/graphql-analyzer";
 
-  localStorage.setItem(
-    "graphql-analyzer-context-scan-timestamp",
-    Date.now().toString(),
-  );
-  localStorage.setItem("graphql-analyzer-context-scan-url", graphqlUrl);
-  localStorage.setItem(
-    "graphql-analyzer-context-scan-headers",
-    JSON.stringify(headers),
+  await storageService.setMultiple({
+    "graphql-analyzer-navigate-to": "Dashboard",
+    "graphql-analyzer-navigate-timestamp": Date.now().toString(),
+    "graphql-analyzer-context-scan-request-id": requestId,
+  });
+
+  window.dispatchEvent(
+    new CustomEvent("graphql-analyzer-navigate", {
+      detail: { page: "Dashboard" },
+    }),
   );
 
   window.dispatchEvent(
     new CustomEvent("graphql-analyzer-context-scan", {
-      detail: { url: graphqlUrl, headers },
+      detail: { requestId },
     }),
   );
-};
 
-const saveToAttacker = () => {
-  const requestData = {
-    id: props.request.id?.toString() || "",
-    host: props.request.host || "",
-    port: props.request.port || 80,
-    path: props.request.path || "/",
-    query: props.request.query || "",
-    headers: parsedHttp.value?.headers || {},
-    raw: props.request.raw || "",
-  };
-
-  localStorage.setItem(
-    "graphql-analyzer-context-attack-request",
-    JSON.stringify(requestData),
-  );
-
-  props.sdk.window.showToast("Redirecting to attack page...", {
+  props.sdk.window.showToast("Scanning GraphQL endpoint...", {
     variant: "info",
   });
+};
+
+const saveToAttacker = async () => {
+  const requestId = props.request.id?.toString();
+  if (requestId === undefined) {
+    props.sdk.window.showToast("No request ID available", { variant: "error" });
+    return;
+  }
 
   window.location.hash = "/graphql-analyzer";
-  localStorage.setItem("graphql-analyzer-navigate-to", "Attacks");
-  localStorage.setItem(
-    "graphql-analyzer-navigate-timestamp",
-    Date.now().toString(),
-  );
+
+  await storageService.setMultiple({
+    "graphql-analyzer-navigate-to": "Attacks",
+    "graphql-analyzer-navigate-timestamp": Date.now().toString(),
+    "graphql-analyzer-context-attack-request-id": requestId,
+  });
 
   window.dispatchEvent(
     new CustomEvent("graphql-analyzer-navigate", {
-      detail: {
-        page: "Attacks",
-        requestId: requestData.id,
-        request: requestData,
-      },
+      detail: { page: "Attacks" },
     }),
   );
 
-  setTimeout(() => {
-    window.dispatchEvent(
-      new CustomEvent("graphql-analyzer-context-attack", {
-        detail: { request: requestData },
-      }),
-    );
-  }, 200);
+  window.dispatchEvent(
+    new CustomEvent("graphql-analyzer-context-attack", {
+      detail: { requestId },
+    }),
+  );
+
+  props.sdk.window.showToast("Sending to attack page...", {
+    variant: "info",
+  });
 };
 </script>
 
