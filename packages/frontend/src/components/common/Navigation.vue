@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import MenuBar from "primevue/menubar";
+import { ref } from "vue";
+
+import SettingsDialog from "./SettingsDialog.vue";
+
 type PageType = "Dashboard" | "Explorer" | "Voyager" | "Attacks" | "Docs";
 defineProps<{
   currentPage: PageType;
@@ -43,6 +47,8 @@ const handleLabel = (
   }
   return label;
 };
+
+const showSettings = ref(false);
 </script>
 <template>
   <MenuBar :model="items" class="h-12 gap-2">
@@ -59,5 +65,16 @@ const handleLabel = (
         @mousedown="$emit('page-change', item.page)"
       />
     </template>
+    <template #end>
+      <Button
+        icon="fas fa-cog"
+        severity="contrast"
+        size="small"
+        text
+        v-tooltip="'Settings'"
+        @click="showSettings = true"
+      />
+    </template>
   </MenuBar>
+  <SettingsDialog v-model:visible="showSettings" />
 </template>

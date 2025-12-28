@@ -447,8 +447,9 @@ const createAttackSession = async (config: AttackConfig): Promise<AttackSession>
   };
 };
 
-const selectAttackSession = (sessionId: string) => {
+const selectAttackSession = async (sessionId: string) => {
   selectedAttackSessionId.value = sessionId;
+  await saveAttackSessions();
   const session = selectedAttackSession.value;
   if (session) {
     attackResults.value = session.results;
@@ -825,10 +826,7 @@ const executeAttacks = async () => {
     const currentSession = selectedAttackSession.value;
     let attackSession: AttackSession;
 
-    if (
-      currentSession !== undefined &&
-      currentSession.status === "pending"
-    ) {
+    if (currentSession !== undefined) {
       let domain = "Unknown";
       if (config.targetType === "request" && config.selectedRequestData) {
         const requestData = config.selectedRequestData as SelectedRequest;
@@ -869,8 +867,11 @@ const executeAttacks = async () => {
       }
     } else {
       const newAttackSession = await createAttackSession(config);
-      attackSession = newAttackSession;
-      attackSessions.value.unshift(attackSession); // Add to beginning
+      attackSession = {
+        ...newAttackSession,
+        status: "running",
+      };
+      attackSessions.value.unshift(attackSession);
       selectedAttackSessionId.value = attackSession.id;
     }
 
@@ -1381,11 +1382,11 @@ onMounted(async () => {
   );
   window.addEventListener(
     "graphql-analyzer-attack-progress",
-    handleAttackProgress as EventListener,
+    handleAttackProgress as unknown as EventListener,
   );
   window.addEventListener(
     "graphql-analyzer-attack-complete",
-    handleAttackComplete as EventListener,
+    handleAttackComplete as unknown as EventListener,
   );
 
   loadSessions();
@@ -1465,11 +1466,11 @@ onMounted(async () => {
     );
     window.removeEventListener(
       "graphql-analyzer-attack-progress",
-      handleAttackProgress as EventListener,
+      handleAttackProgress as unknown as EventListener,
     );
     window.removeEventListener(
       "graphql-analyzer-attack-complete",
-      handleAttackComplete as EventListener,
+      handleAttackComplete as unknown as EventListener,
     );
   };
 

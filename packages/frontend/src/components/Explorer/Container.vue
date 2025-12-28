@@ -2,7 +2,7 @@
 import Card from "primevue/card";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 
 import CodePanel from "./CodePanel.vue";
 import Header from "./Header.vue";
@@ -12,6 +12,8 @@ import { useSessions } from "./useSessions";
 import { useTreeData } from "./useTreeData";
 
 import { SessionTab } from "@/components/dashboard";
+import { useSDK } from "@/plugins/sdk";
+import { createStorageService } from "@/services/storage";
 
 const props = defineProps<{
   navigateTo?: (
@@ -49,23 +51,84 @@ type TreeNode = {
   children?: TreeNode[];
 };
 
+const sdk = useSDK();
+const storageService = createStorageService(sdk);
+
 const selectedNode = ref<TreeNode | undefined>(undefined);
 const expandedKeys = ref<Record<string, boolean>>({});
+
+const loadExplorerState = async () => {
+  if (selectedSessionId.value === undefined) {
+    return;
+  }
+
+  await nextTick();
+  await nextTick();
+  
+  const storedExpandedKeys = storageService.get<Record<string, boolean>>(
+    `explorer-expanded-keys-${selectedSessionId.value}`,
+  );
+  if (storedExpandedKeys !== undefined && Object.keys(storedExpandedKeys).length > 0) {
+    expandedKeys.value = { ...storedExpandedKeys };
+    await nextTick();
+  }
+
+  const storedSelectedNodeKey = storageService.get<string>(
+    `explorer-selected-node-${selectedSessionId.value}`,
+  );
+  if (storedSelectedNodeKey !== undefined && storedSelectedNodeKey !== "") {
+    await nextTick();
+    const treeData = getTreeData();
+    const findNode = (nodes: TreeNode[]): TreeNode | undefined => {
+      for (const node of nodes) {
+        if (node.key === storedSelectedNodeKey) {
+          return node;
+        }
+        if (node.children !== undefined) {
+          const found = findNode(node.children);
+          if (found !== undefined) {
+            return found;
+          }
+        }
+      }
+      return undefined;
+    };
+    const foundNode = findNode(treeData);
+    if (foundNode !== undefined) {
+      selectedNode.value = foundNode;
+      await handleNodeSelect(foundNode);
+    }
+  }
+};
+
+const saveExplorerState = () => {
+  storageService.set(
+    `explorer-expanded-keys-${selectedSessionId.value ?? "default"}`,
+    expandedKeys.value,
+  );
+  storageService.set(
+    `explorer-selected-node-${selectedSessionId.value ?? "default"}`,
+    selectedNode.value?.key ?? "",
+  );
+};
 
 const onNodeSelect = async (node: TreeNode) => {
   selectedNode.value = node;
   await handleNodeSelect(node);
+  saveExplorerState();
 };
 
 const onNodeExpand = (node: TreeNode) => {
   if (node.key !== undefined) {
     expandedKeys.value[node.key] = true;
+    saveExplorerState();
   }
 };
 
 const onNodeCollapse = (node: TreeNode) => {
   if (node.key !== undefined) {
     expandedKeys.value[node.key] = false;
+    saveExplorerState();
   }
 };
 
@@ -99,8 +162,24 @@ const handleRenameSession = (sessionId: string, newName: string) => {
   renameSession(sessionId, newName);
 };
 
-onMounted(() => {
-  loadSessions();
+watch(selectedSessionId, async () => {
+  if (selectedSessionId.value !== undefined) {
+    await nextTick();
+    await nextTick();
+    await loadExplorerState();
+  } else {
+    selectedNode.value = undefined;
+    expandedKeys.value = {};
+  }
+});
+
+onMounted(async () => {
+  await loadSessions();
+  if (selectedSessionId.value !== undefined) {
+    await nextTick();
+    await nextTick();
+    await loadExplorerState();
+  }
 });
 </script>
 

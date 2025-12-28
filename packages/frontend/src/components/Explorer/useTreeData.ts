@@ -178,15 +178,6 @@ export const useTreeData = (selectedSession: {
         icon: string;
         data: { type: string; content: unknown };
       });
-      baseTree[0].children.push({
-        key: "request-template",
-        label: "Request Template",
-        icon: "fas fa-file-alt",
-        data: {
-          type: "request-template",
-          content: { url: selectedSession.value?.url ?? "", schema },
-        },
-      });
     }
 
     return baseTree;

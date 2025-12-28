@@ -4,11 +4,13 @@ import { ref } from "vue";
 import type { ExplorerSession } from "./useSessions";
 
 import { useSDK } from "@/plugins/sdk";
+import { createStorageService } from "@/services/storage";
 
 export const useCodeFormatter = (selectedSession: {
   value: ExplorerSession | undefined;
 }) => {
   const sdk = useSDK();
+  const storageService = createStorageService(sdk);
   const selectedCode = ref("");
   const selectedType = ref("");
   const selectedLanguage = ref<"json" | "javascript" | "graphql">("json");
@@ -26,11 +28,12 @@ export const useCodeFormatter = (selectedSession: {
     }
 
     try {
+      const maxDepth = storageService.get<number>("graphql-analyzer-max-depth") ?? 5;
       const generatedQuery = await sdk.backend.generateGraphQLQuery(
         field,
         type,
         schema.allTypes,
-        200,
+        maxDepth,
       );
       return generatedQuery;
     } catch (error) {
@@ -58,37 +61,6 @@ export const useCodeFormatter = (selectedSession: {
 
   const formatPointOfInterest = (poi: PointOfInterest): string => {
     return JSON.stringify(poi, null, 2);
-  };
-
-  const generateRequestTemplate = (content: {
-    url?: string;
-    schema?: unknown;
-  }): string => {
-    const url = content.url ?? "";
-    let hostname = "";
-    let path = "/graphql";
-
-    try {
-      const urlObj = new URL(url);
-      hostname = urlObj.hostname;
-      path = urlObj.pathname !== "" ? urlObj.pathname : "/graphql";
-    } catch {
-      hostname = "example.com";
-    }
-
-    return `POST ${path} HTTP/1.1
-Host: ${hostname}
-Accept-Encoding: gzip, deflate, br
-Accept: */*
-User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36
-Connection: close
-Cache-Control: max-age=0
-Content-Type: application/json
-
-{
-  "query": "query { __typename }",
-  "variables": {}
-}`;
   };
 
   type TreeNodeData = {
@@ -167,13 +139,6 @@ Content-Type: application/json
               : content;
           selectedCode.value = JSON.stringify(rawData, null, 2);
           selectedLanguage.value = "json";
-          break;
-        }
-        case "request-template": {
-          selectedCode.value = generateRequestTemplate(
-            node.data.content as { url?: string; schema?: unknown },
-          );
-          selectedLanguage.value = "graphql";
           break;
         }
       }

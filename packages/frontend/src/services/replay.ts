@@ -295,7 +295,13 @@ export class GraphQLReplayService {
       }
 
       for (const [name, value] of Object.entries(headers)) {
-        if (name !== "" && value !== "" && name.toLowerCase() !== "host") {
+        const lowerName = name.toLowerCase();
+        if (
+          name !== "" &&
+          value !== "" &&
+          lowerName !== "host" &&
+          lowerName !== "content-length"
+        ) {
           request += `${name}: ${value}\r\n`;
         }
       }

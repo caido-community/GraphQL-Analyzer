@@ -254,12 +254,12 @@ export function useScanning(
     }
   };
 
-  const selectSession = (session: DashboardActivity) => {
+  const selectSession = async (session: DashboardActivity) => {
     if (session.type === "attack") {
       if (navigateTo !== undefined) {
-        void sdk.storage.set({
-          "graphql-analyzer-navigate-to-attack": session.attackSessionId ?? "",
-        } as unknown as Record<string, never>);
+        const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
+        currentStorage["graphql-analyzer-navigate-to-attack"] = session.attackSessionId ?? "";
+        await sdk.storage.set(currentStorage as unknown as Record<string, never>);
         navigateTo("Attacks");
       }
       return;
@@ -324,6 +324,7 @@ export function useScanning(
           supportsIntrospection?: boolean;
           createdAt: Date;
           status: string;
+          requestId?: string;
         }>;
         selectedExplorerSessionId?: string;
         dashboardActivities?: DashboardActivity[];

@@ -459,6 +459,7 @@ const loadSessions = async () => {
           explorerSessions?: ExplorerSession[];
           selectedExplorerSessionId?: string;
           "voyager-auto-select-session"?: string;
+          "voyager-selected-session-id"?: string;
         }
       | undefined;
 
@@ -485,6 +486,18 @@ const loadSessions = async () => {
         await sdk.storage.set(updatedStorage as unknown as Record<string, never>);
         return;
       }
+
+      const persistedSessionId = stored["voyager-selected-session-id"];
+      if (persistedSessionId !== undefined && persistedSessionId !== null && persistedSessionId !== "") {
+        const sessionToSelect = sessions.value.find(
+          (s: ExplorerSession) => s.id === persistedSessionId,
+        );
+        if (sessionToSelect !== undefined) {
+          selectedSessionId.value = persistedSessionId;
+          await selectSession(persistedSessionId);
+          return;
+        }
+      }
     } else {
       sessions.value = [];
     }
@@ -498,6 +511,10 @@ const loadSessions = async () => {
 
 const selectSession = async (sessionId: string) => {
   selectedSessionId.value = sessionId;
+
+  const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
+  currentStorage["voyager-selected-session-id"] = sessionId;
+  await sdk.storage.set(currentStorage as unknown as Record<string, never>);
 
   sdk.window.showToast("Loading the graph for you...", { variant: "info" });
 
@@ -1145,12 +1162,36 @@ watch(
   { deep: true },
 );
 
-const handleStorageChange = () => {
-  loadSessions();
+const handleStorageChange = async () => {
+  const currentSelectedId = selectedSessionId.value;
+  await loadSessions();
+  
+  const stored = sdk.storage.get() as
+    | {
+        "voyager-selected-session-id"?: string;
+      }
+    | undefined;
+  
+  const persistedSessionId = stored?.["voyager-selected-session-id"];
+  if (persistedSessionId !== undefined && persistedSessionId !== null && persistedSessionId !== "") {
+    const sessionToSelect = sessions.value.find(
+      (s: ExplorerSession) => s.id === persistedSessionId,
+    );
+    if (sessionToSelect !== undefined) {
+      selectedSessionId.value = persistedSessionId;
+      await selectSession(persistedSessionId);
+      return;
+    }
+  }
+  
+  if (currentSelectedId !== undefined && sessions.value.some((s) => s.id === currentSelectedId)) {
+    selectedSessionId.value = currentSelectedId;
+    await selectSession(currentSelectedId);
+  }
 };
 
-onMounted(() => {
-  loadSessions();
+onMounted(async () => {
+  await loadSessions();
 
   window.addEventListener("storage", handleStorageChange);
   window.addEventListener("graphql-analyzer-sessions-updated", handleStorageChange);
