@@ -1,15 +1,9 @@
 import { type BackendSDK } from "./types";
 
-let sdk: BackendSDK | undefined;
+// SDK is stored for potential future use, but currently all functions receive SDK as parameter
+// @ts-expect-error - Variable is intentionally unused but kept for future use
+let _sdk: BackendSDK | undefined;
 
-export function setSDK(_sdk: BackendSDK): void {
-  sdk = _sdk;
-}
-
-export function requireSDK(): BackendSDK {
-  if (sdk === undefined) {
-    throw new Error("Backend SDK not initialized");
-  }
-
-  return sdk;
+export function setSDK(sdk: BackendSDK): void {
+  _sdk = sdk;
 }

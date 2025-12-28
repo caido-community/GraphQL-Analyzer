@@ -20,7 +20,7 @@ const activeTab = ref(0);
 
 // Parse HTTP raw data
 const parseHttpRaw = (raw: string) => {
-  if (!raw) return null;
+  if (raw === undefined || raw === "") return null;
 
   // Split by double CRLF to separate headers from body
   const parts = raw.split("\r\n\r\n");
@@ -30,21 +30,27 @@ const parseHttpRaw = (raw: string) => {
   const body = parts.slice(1).join("\r\n\r\n"); // Rejoin in case body contains \r\n\r\n
 
   // Parse the first line to get method
-  const lines = headerSection?.split("\r\n") || [];
+  const lines = headerSection?.split("\r\n") ?? [];
   const firstLine = lines[0];
-  const methodMatch = firstLine?.match(/^(\w+)\s+/);
-  const method = methodMatch ? methodMatch[1] : "UNKNOWN";
+  const methodMatch =
+    firstLine !== undefined ? firstLine.match(/^(\w+)\s+/) : null;
+  const method =
+    methodMatch !== null && methodMatch[1] !== undefined
+      ? methodMatch[1]
+      : "UNKNOWN";
 
   // Parse headers
   const headers: Record<string, string> = {};
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
-    if (!line) continue;
+    if (line === undefined || line === "") continue;
     const colonIndex = line.indexOf(":");
     if (colonIndex > 0) {
       const name = line.substring(0, colonIndex).trim();
       const value = line.substring(colonIndex + 1).trim();
-      headers[name] = value;
+      if (name !== "" && value !== "") {
+        headers[name] = value;
+      }
     }
   }
 
@@ -57,17 +63,23 @@ const parsedHttp = computed(() => {
 
 const graphqlData = computed(() => {
   const parsed = parsedHttp.value;
-  if (!parsed || !parsed.body) return null;
+  if (parsed === null || parsed.body === undefined || parsed.body === "") {
+    return null;
+  }
 
   // Try to parse body as JSON and look for GraphQL structure
   try {
-    const bodyJson = JSON.parse(parsed.body);
-    if (bodyJson.query && typeof bodyJson.query === "string") {
+    const bodyJson = JSON.parse(parsed.body) as {
+      query?: string;
+      variables?: unknown;
+      operationName?: string;
+    };
+    if (bodyJson.query !== undefined && typeof bodyJson.query === "string") {
       return bodyJson;
     }
   } catch {
     // If not JSON, check if it's raw GraphQL
-    if (/\b(query|mutation|subscription)\s*[\{\(]/.test(parsed.body)) {
+    if (/\b(query|mutation|subscription)\s*[{[]/.test(parsed.body)) {
       return { query: parsed.body };
     }
   }
@@ -127,7 +139,7 @@ const formatGraphQLQuery = (query: string): string => {
 // Initialize editable content
 onMounted(() => {
   // Initialize query
-  if (graphqlData.value?.query) {
+  if (graphqlData.value?.query !== undefined) {
     const formatted = formatGraphQLQuery(graphqlData.value.query);
     editableQuery.value = formatted;
   } else {
@@ -212,7 +224,8 @@ const parseQueryFields = (query: string) => {
       if (match) {
         const fieldName = match[1];
         if (
-          fieldName &&
+          fieldName !== undefined &&
+          fieldName !== "" &&
           !["query", "mutation", "subscription", "fragment"].includes(
             fieldName.toLowerCase(),
           )

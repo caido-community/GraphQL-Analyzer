@@ -9,8 +9,21 @@ import type {
   Result,
 } from "shared";
 
+type AttackSessionState = {
+  config: AttackConfig;
+  status: "running" | "completed" | "failed" | "cancelled";
+  progress: number;
+  results: AttackResult[];
+  totalAttacks: number;
+  completedAttacks: number;
+  startTime: Date;
+  endTime?: Date;
+  currentAttack?: AttackType;
+  error?: string;
+};
+
 export class GraphQLAttackService {
-  private static attackSessions: Map<string, any> = new Map();
+  private static attackSessions: Map<string, AttackSessionState> = new Map();
 
   constructor(private sdk: SDK) {}
 
@@ -42,7 +55,7 @@ export class GraphQLAttackService {
       hostHeader = "";
     }
 
-    if (config.useOriginalHeaders && config.originalHeaders) {
+    if (config.useOriginalHeaders === true && config.originalHeaders) {
       // Use original request headers as base
       finalHeaders = { ...config.originalHeaders };
 
@@ -83,7 +96,7 @@ export class GraphQLAttackService {
               existingKey.toLowerCase() === customName.toLowerCase(),
           );
 
-          if (matchingKey) {
+          if (matchingKey !== undefined) {
             // Override the existing header
             delete finalHeaders[matchingKey];
             finalHeaders[customName] = customValue;
@@ -203,7 +216,11 @@ export class GraphQLAttackService {
       const maxRetries = 3;
       let introspectionFound = false;
 
-      for (let retry = 0; retry < maxRetries && !introspectionFound; retry++) {
+      for (
+        let retry = 0;
+        retry < maxRetries && introspectionFound === false;
+        retry++
+      ) {
         try {
           const payload = JSON.stringify({
             query: queryTest.query,
@@ -225,30 +242,37 @@ export class GraphQLAttackService {
           totalRequests++;
 
           // Store the request/response data - ensure we always have valid data
-          if (result.request) {
+          if (result.request !== undefined) {
             lastRequest = result.request;
           }
-          if (result.response) {
+          if (result.response !== undefined) {
             lastResponse = result.response;
           }
 
-          if (result.response) {
-            const responseBody = result.response.getBody()?.toText() || "";
+          if (result.response !== undefined) {
+            const responseBody = result.response.getBody()?.toText() ?? "";
 
             if (result.response.getCode() === 200) {
               try {
-                const jsonResponse = JSON.parse(responseBody);
+                const jsonResponse: {
+                  data?: { __schema?: unknown; __type?: unknown };
+                  errors?: Array<{ message?: string }>;
+                } = JSON.parse(responseBody) as {
+                  data?: { __schema?: unknown; __type?: unknown };
+                  errors?: Array<{ message?: string }>;
+                };
 
                 if (
-                  jsonResponse.data &&
-                  (jsonResponse.data.__schema || jsonResponse.data.__type)
+                  jsonResponse.data !== undefined &&
+                  (jsonResponse.data.__schema !== undefined ||
+                    jsonResponse.data.__type !== undefined)
                 ) {
                   introspectionFound = true;
                   findings.push({
                     severity: "high",
                     title: `GraphQL Introspection Enabled (${queryTest.name})`,
                     description: `The GraphQL endpoint allows introspection queries via ${queryTest.name}, which completely exposes the schema structure including all types, fields, mutations, and subscriptions. This information disclosure vulnerability enables attackers to understand the full API surface and craft targeted attacks against exposed functionality.`,
-                    evidence: `${queryTest.name} successful on retry ${retry + 1}: ${jsonResponse.data.__schema ? `Exposed schema with ${jsonResponse.data.__schema.types?.length || 0} types, including sensitive type information and field definitions` : "Type information and field structure exposed"}`,
+                    evidence: `${queryTest.name} successful on retry ${retry + 1}: ${jsonResponse.data.__schema !== undefined ? `Exposed schema with ${((jsonResponse.data.__schema as { types?: unknown[] }).types?.length ?? 0).toString()} types, including sensitive type information and field definitions` : "Type information and field structure exposed"}`,
                     recommendation:
                       "Disable introspection in production environments immediately. Most GraphQL implementations allow disabling introspection via configuration (e.g., Apollo Server's introspection: false). This prevents schema structure discovery while maintaining normal API functionality.",
                   });
@@ -260,12 +284,21 @@ export class GraphQLAttackService {
               }
             } else if (result.response.getCode() === 400) {
               try {
-                const jsonResponse = JSON.parse(responseBody);
+                const jsonResponse: { errors?: Array<{ message?: string }> } =
+                  JSON.parse(responseBody) as {
+                    errors?: Array<{ message?: string }>;
+                  };
                 if (
-                  jsonResponse.errors?.some(
-                    (e: any) =>
-                      e.message?.toLowerCase().includes("introspection") ||
-                      e.message?.toLowerCase().includes("disabled"),
+                  Array.isArray(jsonResponse.errors) &&
+                  jsonResponse.errors.some(
+                    (errorItem: { message?: string }) => {
+                      const message = errorItem.message;
+                      return (
+                        typeof message === "string" &&
+                        (message.toLowerCase().includes("introspection") ||
+                          message.toLowerCase().includes("disabled"))
+                      );
+                    },
                   )
                 ) {
                   break;
@@ -293,17 +326,18 @@ export class GraphQLAttackService {
       targetUrl: config.targetUrl,
       payload: combinedPayload.trim(),
       sentAt: new Date(),
-      response: lastResponse
-        ? {
-            statusCode: lastResponse.getCode(),
-            body: lastResponse.getBody()?.toText() || "",
-            headers: lastResponse.getHeaders(),
-            timing: totalTiming,
-          }
-        : undefined,
-      rawRequest: lastRequest?.getRaw()?.toText() || combinedPayload,
-      rawResponse: lastResponse?.getRaw()?.toText() || "",
-      requestId: lastRequest?.getId()?.toString(),
+      response:
+        lastResponse !== undefined
+          ? {
+              statusCode: lastResponse.getCode(),
+              body: lastResponse.getBody()?.toText() ?? "",
+              headers: lastResponse.getHeaders(),
+              timing: totalTiming,
+            }
+          : undefined,
+      rawRequest: lastRequest?.getRaw()?.toText() ?? combinedPayload,
+      rawResponse: lastResponse?.getRaw()?.toText() ?? "",
+      requestId: lastRequest?.getId()?.toString() ?? undefined,
       findings,
       status: "completed",
       requestsExecuted: totalRequests,
@@ -319,7 +353,7 @@ export class GraphQLAttackService {
   ): Promise<Result<AttackResult>> {
     const attackId = `depth-limit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const findings: AttackFinding[] = [];
-    const maxDepth = config.maxDepth || 20;
+    const maxDepth = config.maxDepth ?? 20;
 
     const depthTests = maxDepth <= 10 ? [maxDepth] : [10, maxDepth];
     let lastRequest: Request | undefined;
@@ -354,15 +388,15 @@ export class GraphQLAttackService {
         const timing = endTime - startTime;
         totalTiming += timing;
 
-        if (result.request) {
+        if (result.request !== undefined) {
           lastRequest = result.request;
         }
-        if (result.response) {
+        if (result.response !== undefined) {
           lastResponse = result.response;
         }
 
-        if (result.response) {
-          const responseBody = result.response.getBody()?.toText() || "";
+        if (result.response !== undefined) {
+          const responseBody = result.response.getBody()?.toText() ?? "";
 
           if (result.response.getCode() === 200) {
             if (
@@ -382,14 +416,21 @@ export class GraphQLAttackService {
             }
           } else if (result.response.getCode() === 400) {
             try {
-              const jsonResponse = JSON.parse(responseBody);
+              const jsonResponse: { errors?: Array<{ message?: string }> } =
+                JSON.parse(responseBody) as {
+                  errors?: Array<{ message?: string }>;
+                };
               if (
-                jsonResponse.errors?.some(
-                  (e: any) =>
-                    e.message?.toLowerCase().includes("depth") ||
-                    e.message?.toLowerCase().includes("complex") ||
-                    e.message?.toLowerCase().includes("nested"),
-                )
+                Array.isArray(jsonResponse.errors) &&
+                jsonResponse.errors.some((errorItem: { message?: string }) => {
+                  const message = errorItem.message;
+                  return (
+                    typeof message === "string" &&
+                    (message.toLowerCase().includes("depth") ||
+                      message.toLowerCase().includes("complex") ||
+                      message.toLowerCase().includes("nested"))
+                  );
+                })
               ) {
                 foundProtection = true;
                 break;
@@ -412,17 +453,18 @@ export class GraphQLAttackService {
       targetUrl: config.targetUrl,
       payload: combinedPayload.trim(),
       sentAt: new Date(),
-      response: lastResponse
-        ? {
-            statusCode: lastResponse.getCode(),
-            body: lastResponse.getBody()?.toText() || "",
-            headers: lastResponse.getHeaders(),
-            timing: totalTiming,
-          }
-        : undefined,
-      rawRequest: lastRequest?.getRaw()?.toText() || combinedPayload,
-      rawResponse: lastResponse?.getRaw()?.toText() || "",
-      requestId: lastRequest?.getId()?.toString(),
+      response:
+        lastResponse !== undefined
+          ? {
+              statusCode: lastResponse.getCode(),
+              body: lastResponse.getBody()?.toText() ?? "",
+              headers: lastResponse.getHeaders(),
+              timing: totalTiming,
+            }
+          : undefined,
+      rawRequest: lastRequest?.getRaw()?.toText() ?? combinedPayload,
+      rawResponse: lastResponse?.getRaw()?.toText() ?? "",
+      requestId: lastRequest?.getId()?.toString() ?? undefined,
       findings,
       status: "completed",
       requestsExecuted: depthTests.length,
@@ -491,15 +533,15 @@ export class GraphQLAttackService {
         totalTiming += timing;
 
         // Store the request/response data - ensure we always have valid data
-        if (result.request) {
+        if (result.request !== undefined) {
           lastRequest = result.request;
         }
-        if (result.response) {
+        if (result.response !== undefined) {
           lastResponse = result.response;
         }
 
-        if (result.response) {
-          const responseBody = result.response.getBody()?.toText() || "";
+        if (result.response !== undefined) {
+          const responseBody = result.response.getBody()?.toText() ?? "";
 
           if (result.response.getCode() === 200) {
             if (timing > 5000 && complexityTest.name.includes("High")) {
@@ -514,14 +556,21 @@ export class GraphQLAttackService {
             }
           } else if (result.response.getCode() === 400) {
             try {
-              const jsonResponse = JSON.parse(responseBody);
+              const jsonResponse: { errors?: Array<{ message?: string }> } =
+                JSON.parse(responseBody) as {
+                  errors?: Array<{ message?: string }>;
+                };
               if (
-                jsonResponse.errors?.some(
-                  (e: any) =>
-                    e.message?.toLowerCase().includes("complex") ||
-                    e.message?.toLowerCase().includes("cost") ||
-                    e.message?.toLowerCase().includes("limit"),
-                )
+                Array.isArray(jsonResponse.errors) &&
+                jsonResponse.errors.some((errorItem: { message?: string }) => {
+                  const message = errorItem.message;
+                  return (
+                    typeof message === "string" &&
+                    (message.toLowerCase().includes("complex") ||
+                      message.toLowerCase().includes("cost") ||
+                      message.toLowerCase().includes("limit"))
+                  );
+                })
               ) {
                 //
               }
@@ -543,17 +592,18 @@ export class GraphQLAttackService {
       targetUrl: config.targetUrl,
       payload: combinedPayload.trim(),
       sentAt: new Date(),
-      response: lastResponse
-        ? {
-            statusCode: lastResponse.getCode(),
-            body: lastResponse.getBody()?.toText() || "",
-            headers: lastResponse.getHeaders(),
-            timing: totalTiming,
-          }
-        : undefined,
-      rawRequest: lastRequest?.getRaw()?.toText() || combinedPayload,
-      rawResponse: lastResponse?.getRaw()?.toText() || "",
-      requestId: lastRequest?.getId()?.toString(),
+      response:
+        lastResponse !== undefined
+          ? {
+              statusCode: lastResponse.getCode(),
+              body: lastResponse.getBody()?.toText() ?? "",
+              headers: lastResponse.getHeaders(),
+              timing: totalTiming,
+            }
+          : undefined,
+      rawRequest: lastRequest?.getRaw()?.toText() ?? combinedPayload,
+      rawResponse: lastResponse?.getRaw()?.toText() ?? "",
+      requestId: lastRequest?.getId()?.toString() ?? undefined,
       findings,
       status: "completed",
       requestsExecuted: complexityTests.length,
@@ -569,7 +619,7 @@ export class GraphQLAttackService {
   ): Promise<Result<AttackResult>> {
     const attackId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const findings: AttackFinding[] = [];
-    const maxBatchSize = config.batchSize || 10;
+    const maxBatchSize = config.batchSize ?? 10;
 
     // Test fewer batch sizes for faster execution (was [2, 5, maxBatchSize, maxBatchSize * 2])
     const batchTests = [5, maxBatchSize];
@@ -604,15 +654,15 @@ export class GraphQLAttackService {
         totalTiming += timing;
 
         // Store the request/response data - ensure we always have valid data
-        if (result.request) {
+        if (result.request !== undefined) {
           lastRequest = result.request;
         }
-        if (result.response) {
+        if (result.response !== undefined) {
           lastResponse = result.response;
         }
 
-        if (result.response) {
-          const responseBody = result.response.getBody()?.toText() || "";
+        if (result.response !== undefined) {
+          const responseBody = result.response.getBody()?.toText() ?? "";
 
           if (result.response.getCode() === 200) {
             try {
@@ -637,14 +687,21 @@ export class GraphQLAttackService {
             }
           } else if (result.response.getCode() === 400) {
             try {
-              const jsonResponse = JSON.parse(responseBody);
+              const jsonResponse: { errors?: Array<{ message?: string }> } =
+                JSON.parse(responseBody) as {
+                  errors?: Array<{ message?: string }>;
+                };
               if (
-                jsonResponse.errors?.some(
-                  (e: any) =>
-                    e.message?.toLowerCase().includes("batch") ||
-                    e.message?.toLowerCase().includes("array") ||
-                    e.message?.toLowerCase().includes("multiple"),
-                )
+                Array.isArray(jsonResponse.errors) &&
+                jsonResponse.errors.some((errorItem: { message?: string }) => {
+                  const message = errorItem.message;
+                  return (
+                    typeof message === "string" &&
+                    (message.toLowerCase().includes("batch") ||
+                      message.toLowerCase().includes("array") ||
+                      message.toLowerCase().includes("multiple"))
+                  );
+                })
               ) {
                 break;
               }
@@ -666,17 +723,18 @@ export class GraphQLAttackService {
       targetUrl: config.targetUrl,
       payload: combinedPayload.trim(),
       sentAt: new Date(),
-      response: lastResponse
-        ? {
-            statusCode: lastResponse.getCode(),
-            body: lastResponse.getBody()?.toText() || "",
-            headers: lastResponse.getHeaders(),
-            timing: totalTiming,
-          }
-        : undefined,
-      rawRequest: lastRequest?.getRaw()?.toText() || combinedPayload,
-      rawResponse: lastResponse?.getRaw()?.toText() || "",
-      requestId: lastRequest?.getId()?.toString(),
+      response:
+        lastResponse !== undefined
+          ? {
+              statusCode: lastResponse.getCode(),
+              body: lastResponse.getBody()?.toText() ?? "",
+              headers: lastResponse.getHeaders(),
+              timing: totalTiming,
+            }
+          : undefined,
+      rawRequest: lastRequest?.getRaw()?.toText() ?? combinedPayload,
+      rawResponse: lastResponse?.getRaw()?.toText() ?? "",
+      requestId: lastRequest?.getId()?.toString() ?? undefined,
       findings,
       status: "completed",
       requestsExecuted: batchTests.length,
@@ -746,25 +804,33 @@ export class GraphQLAttackService {
         totalTiming += timing;
 
         // Store the request/response data - ensure we always have valid data
-        if (result.request) {
+        if (result.request !== undefined) {
           lastRequest = result.request;
         }
-        if (result.response) {
+        if (result.response !== undefined) {
           lastResponse = result.response;
         }
 
-        if (result.response && result.response.getCode() === 400) {
-          const responseBody = result.response.getBody()?.toText() || "";
+        if (
+          result.response !== undefined &&
+          result.response.getCode() === 400
+        ) {
+          const responseBody = result.response.getBody()?.toText() ?? "";
           try {
             const jsonResponse = JSON.parse(responseBody);
-            if (jsonResponse.errors) {
+            if (Array.isArray(jsonResponse.errors)) {
               const suggestiveErrors = jsonResponse.errors.filter(
-                (error: any) =>
-                  error.message?.includes("Did you mean") ||
-                  error.message?.includes("Perhaps you meant") ||
-                  error.message?.match(
-                    /Cannot query field .+ on type .+\. Did you mean .+\?/,
-                  ),
+                (error: { message?: string }) => {
+                  const message = error.message;
+                  return (
+                    typeof message === "string" &&
+                    (message.includes("Did you mean") ||
+                      message.includes("Perhaps you meant") ||
+                      /Cannot query field .+ on type .+\. Did you mean .+\?/.test(
+                        message,
+                      ))
+                  );
+                },
               );
 
               if (suggestiveErrors.length > 0) {
@@ -774,7 +840,10 @@ export class GraphQLAttackService {
                   description:
                     "The GraphQL endpoint provides field suggestions in error messages, potentially revealing schema information.",
                   evidence: suggestiveErrors
-                    .map((e: any) => e.message)
+                    .map(
+                      (errorItem: { message?: string }) =>
+                        errorItem.message ?? "",
+                    )
                     .join("; "),
                   recommendation:
                     "Consider disabling detailed error messages in production to prevent schema enumeration.",
@@ -798,17 +867,18 @@ export class GraphQLAttackService {
       targetUrl: config.targetUrl,
       payload: combinedPayload.trim(),
       sentAt: new Date(),
-      response: lastResponse
-        ? {
-            statusCode: lastResponse.getCode(),
-            body: lastResponse.getBody()?.toText() || "",
-            headers: lastResponse.getHeaders(),
-            timing: totalTiming,
-          }
-        : undefined,
-      rawRequest: lastRequest?.getRaw()?.toText() || combinedPayload,
-      rawResponse: lastResponse?.getRaw()?.toText() || "",
-      requestId: lastRequest?.getId()?.toString(),
+      response:
+        lastResponse !== undefined
+          ? {
+              statusCode: lastResponse.getCode(),
+              body: lastResponse.getBody()?.toText() ?? "",
+              headers: lastResponse.getHeaders(),
+              timing: totalTiming,
+            }
+          : undefined,
+      rawRequest: lastRequest?.getRaw()?.toText() ?? combinedPayload,
+      rawResponse: lastResponse?.getRaw()?.toText() ?? "",
+      requestId: lastRequest?.getId()?.toString() ?? undefined,
       findings,
       status: "completed",
       requestsExecuted: suggestionTests.length,
@@ -920,7 +990,7 @@ export class GraphQLAttackService {
   }
 
   // Start attacks asynchronously
-  async startAttacksAsync(config: AttackConfig): Promise<Result<string>> {
+  startAttacksAsync(config: AttackConfig): Promise<Result<string>> {
     const sessionId = `attack-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     // Initialize session
@@ -939,26 +1009,38 @@ export class GraphQLAttackService {
         `Attack execution error: ${error instanceof Error ? error.message : String(error)}`,
       );
       const session = GraphQLAttackService.attackSessions.get(sessionId);
-      if (session) {
+      if (session !== undefined) {
         session.status = "failed";
         session.error =
           error instanceof Error ? error.message : "Unknown error";
       }
     });
 
-    return { kind: "Ok", value: sessionId };
+    return Promise.resolve({ kind: "Ok" as const, value: sessionId });
   }
 
   // Get current attack status and results
-  async getAttackStatus(sessionId: string): Promise<Result<any>> {
+  getAttackStatus(sessionId: string): Promise<
+    Result<{
+      status: string;
+      progress: number;
+      results: AttackResult[];
+      totalAttacks: number;
+      completedAttacks: number;
+      isComplete: boolean;
+    }>
+  > {
     const session = GraphQLAttackService.attackSessions.get(sessionId);
 
-    if (!session) {
-      return { kind: "Error", error: "Attack session not found" };
+    if (session === undefined) {
+      return Promise.resolve({
+        kind: "Error" as const,
+        error: "Attack session not found",
+      });
     }
 
-    return {
-      kind: "Ok",
+    return Promise.resolve({
+      kind: "Ok" as const,
       value: {
         status: session.status,
         progress: session.progress,
@@ -970,19 +1052,22 @@ export class GraphQLAttackService {
           session.status === "failed" ||
           session.status === "cancelled",
       },
-    };
+    });
   }
 
   // Cancel attack session
-  async cancelAttackSession(sessionId: string): Promise<Result<void>> {
+  cancelAttackSession(sessionId: string): Promise<Result<void>> {
     const session = GraphQLAttackService.attackSessions.get(sessionId);
 
-    if (!session) {
-      return { kind: "Error", error: "Attack session not found" };
+    if (session === undefined) {
+      return Promise.resolve({
+        kind: "Error" as const,
+        error: "Attack session not found",
+      });
     }
 
     session.status = "cancelled";
-    return { kind: "Ok", value: undefined };
+    return Promise.resolve({ kind: "Ok" as const, value: undefined });
   }
 
   // Execute attacks with real-time updates
@@ -991,7 +1076,7 @@ export class GraphQLAttackService {
     config: AttackConfig,
   ): Promise<void> {
     const session = GraphQLAttackService.attackSessions.get(sessionId);
-    if (!session) {
+    if (session === undefined) {
       return;
     }
 

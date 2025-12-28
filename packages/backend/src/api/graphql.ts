@@ -201,7 +201,7 @@ export class GraphQLService {
       // Send request using Caido SDK (adds to HTTP History)
       const result = await this.sdk.requests.send(spec);
 
-      if (!result.response) {
+      if (result.response === undefined) {
         return {
           kind: "Error",
           error: "No response received from the endpoint",
@@ -209,7 +209,7 @@ export class GraphQLService {
       }
 
       const statusCode = result.response.getCode();
-      const responseBody = result.response.getBody()?.toText() || "";
+      const responseBody = result.response.getBody()?.toText() ?? "";
 
       // Check for authentication errors first
       if (statusCode === 401) {
@@ -268,16 +268,24 @@ export class GraphQLService {
         const jsonResponse = JSON.parse(responseBody);
 
         // Check for errors in the GraphQL response
-        if (jsonResponse.errors) {
+        if (
+          Array.isArray(jsonResponse.errors) &&
+          jsonResponse.errors.length > 0
+        ) {
           // Check if it's an introspection disabled error
           const introspectionDisabled = jsonResponse.errors.some(
-            (error: any) =>
-              error.message?.toLowerCase().includes("introspection") ||
-              error.message?.toLowerCase().includes("disabled") ||
-              error.message?.toLowerCase().includes("not allowed"),
+            (error: { message?: string }) => {
+              const message = error.message;
+              return (
+                typeof message === "string" &&
+                (message.toLowerCase().includes("introspection") ||
+                  message.toLowerCase().includes("disabled") ||
+                  message.toLowerCase().includes("not allowed"))
+              );
+            },
           );
 
-          if (introspectionDisabled) {
+          if (introspectionDisabled === true) {
             return { kind: "Ok", value: { supportsIntrospection: false } };
           }
 
@@ -285,7 +293,7 @@ export class GraphQLService {
           const errorMessages = (
             jsonResponse.errors as Array<{ message?: string }>
           )
-            .map((e) => e.message || "Unknown error")
+            .map((e) => e.message ?? "Unknown error")
             .join(", ");
           return {
             kind: "Error",
@@ -294,7 +302,10 @@ export class GraphQLService {
         }
 
         // Check for successful introspection
-        if (jsonResponse.data && jsonResponse.data.__schema) {
+        if (
+          jsonResponse.data !== undefined &&
+          jsonResponse.data.__schema !== undefined
+        ) {
           const schema = this.parseIntrospectionResult(
             jsonResponse.data.__schema as IntrospectionSchema,
           );
@@ -305,7 +316,7 @@ export class GraphQLService {
         }
 
         // Response has data but no schema
-        if (jsonResponse.data) {
+        if (jsonResponse.data !== undefined) {
           return {
             kind: "Error",
             error:
@@ -411,11 +422,11 @@ export class GraphQLService {
 
     // Categorize all types (excluding built-in types)
     const customTypes = schemaData.types.filter(
-      (t) => t.name && !t.name.startsWith("__"),
+      (t) => typeof t.name === "string" && !t.name.startsWith("__"),
     );
 
     for (const type of customTypes) {
-      if (!type.name) continue;
+      if (type.name === undefined) continue;
 
       switch (type.kind) {
         case "OBJECT":
@@ -463,7 +474,7 @@ export class GraphQLService {
             possibleTypes:
               type.possibleTypes && Array.isArray(type.possibleTypes)
                 ? type.possibleTypes
-                    .map((pt) => pt.name || "")
+                    .map((pt) => pt.name ?? "")
                     .filter((name) => name !== "")
                 : [],
           });
@@ -476,7 +487,7 @@ export class GraphQLService {
             possibleTypes:
               type.possibleTypes && Array.isArray(type.possibleTypes)
                 ? type.possibleTypes
-                    .map((pt) => pt.name || "")
+                    .map((pt) => pt.name ?? "")
                     .filter((name) => name !== "")
                 : [],
           });
@@ -528,7 +539,7 @@ export class GraphQLService {
     if (type.kind === "LIST" && type.ofType) {
       return `[${this.formatType(type.ofType)}]`;
     }
-    return type.name || "Unknown";
+    return type.name ?? "Unknown";
   };
 
   private generatePointsOfInterest(schema: GraphQLSchema): PointOfInterest[] {
@@ -628,12 +639,12 @@ export class GraphQLService {
       str.charAt(0).toUpperCase() + str.slice(1);
 
     // Add operation header with arguments
-    const args = this.formatFieldArguments(field.args || []);
+    const args = this.formatFieldArguments(field.args ?? []);
     lines.push(`${operationType} ${capitalize(field.name)}${args} {`);
 
     // Add the field itself with nested fields
     lines.push(
-      `  ${field.name}${this.formatQueryArguments(field.args || [])} {`,
+      `  ${field.name}${this.formatQueryArguments(field.args ?? [])} {`,
     );
 
     // Generate nested fields recursively
@@ -660,7 +671,7 @@ export class GraphQLService {
       type?: IntrospectionTypeRef | string;
     }>,
   ): string {
-    if (!args || args.length === 0) return "";
+    if (args.length === 0) return "";
 
     const argStrings = args.map((arg) => {
       const type = arg.rawType
@@ -677,7 +688,7 @@ export class GraphQLService {
   }
 
   private formatQueryArguments(args: Array<{ name: string }>): string {
-    if (!args || args.length === 0) return "";
+    if (args.length === 0) return "";
 
     const argStrings = args.map((arg) => `${arg.name}: $${arg.name}`);
     return `(${argStrings.join(", ")})`;
@@ -700,10 +711,14 @@ export class GraphQLService {
 
     // Unwrap the type (handle NON_NULL, LIST)
     const unwrappedType = this.unwrapType(type);
-    if (!unwrappedType || !unwrappedType.name) return lines;
+    if (unwrappedType === undefined || unwrappedType.name === undefined)
+      return lines;
 
     // Cycle detection - prevent infinite recursion
-    if (unwrappedType.name && visitedTypes.has(unwrappedType.name)) {
+    if (
+      unwrappedType.name !== undefined &&
+      visitedTypes.has(unwrappedType.name)
+    ) {
       lines.push(`${indent}# Cycle detected for type: ${unwrappedType.name}`);
       return lines;
     }
@@ -757,8 +772,8 @@ export class GraphQLService {
         ) {
           for (const possibleType of typeDefinition.possibleTypes) {
             // Show ALL possible types!
-            const typeName = possibleType.name || "";
-            if (typeName) {
+            const typeName = possibleType.name ?? "";
+            if (typeName !== "") {
               lines.push(`${indent}... on ${typeName} {`);
               lines.push(`${indent}  __typename`);
               const nestedFields = this.generateNestedFields(
@@ -791,8 +806,8 @@ export class GraphQLService {
 
   private unwrapType(
     type: IntrospectionTypeRef | string | undefined,
-  ): IntrospectionTypeRef | null {
-    if (!type || typeof type === "string") return null;
+  ): IntrospectionTypeRef | undefined {
+    if (type === undefined || typeof type === "string") return undefined;
     if (type.kind === "NON_NULL" || type.kind === "LIST") {
       return this.unwrapType(type.ofType);
     }
@@ -804,7 +819,7 @@ export class GraphQLService {
     allTypes: IntrospectionType[],
   ): boolean {
     const unwrapped = this.unwrapType(type);
-    if (!unwrapped || !unwrapped.name) return true;
+    if (unwrapped === undefined || unwrapped.name === undefined) return true;
 
     const typeDefinition = allTypes.find((t) => t.name === unwrapped.name);
     if (!typeDefinition) return true;
@@ -835,7 +850,7 @@ export class GraphQLService {
       // Send request using Caido SDK (adds to HTTP History)
       const result = await this.sdk.requests.send(spec);
 
-      if (!result.response) {
+      if (result.response === undefined) {
         return {
           kind: "Error",
           error: "No response received",
@@ -850,21 +865,20 @@ export class GraphQLService {
         };
       }
 
-      const responseBody = result.response.getBody()?.toText() || "";
+      const responseBody = result.response.getBody()?.toText() ?? "";
       const parsedResult: Record<string, unknown> = JSON.parse(
         responseBody,
       ) as Record<string, unknown>;
 
       // Check for GraphQL errors
       if (
-        parsedResult.errors &&
         Array.isArray(parsedResult.errors) &&
         parsedResult.errors.length > 0
       ) {
         const errorMessages = (
           parsedResult.errors as Array<{ message?: string }>
         )
-          .map((err) => err.message || "Unknown error")
+          .map((err) => err.message ?? "Unknown error")
           .join(", ");
         return {
           kind: "Error",

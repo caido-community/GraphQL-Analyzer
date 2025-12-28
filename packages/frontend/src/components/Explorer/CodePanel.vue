@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 
+import type { ExplorerSession } from "./useSessions";
+
 import { CodeEditor } from "@/components/common";
 import { useSDK } from "@/plugins/sdk";
 
@@ -10,7 +12,7 @@ const props = defineProps<{
   selectedCode: string;
   selectedType: string;
   selectedLanguage: "json" | "javascript" | "graphql";
-  selectedSession: any;
+  selectedSession: ExplorerSession | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -20,7 +22,7 @@ const emit = defineEmits<{
 }>();
 
 const copyToClipboard = async () => {
-  if (props.selectedCode) {
+  if (props.selectedCode !== "") {
     try {
       await navigator.clipboard.writeText(props.selectedCode);
       sdk.window.showToast("Code copied to clipboard!", { variant: "success" });
@@ -32,7 +34,7 @@ const copyToClipboard = async () => {
 };
 
 const openInVoyager = () => {
-  if (props.selectedSession) {
+  if (props.selectedSession !== undefined) {
     localStorage.setItem(
       "voyager-auto-select-session",
       props.selectedSession.id,
@@ -42,7 +44,7 @@ const openInVoyager = () => {
 };
 
 const sendToAttacker = () => {
-  if (!props.selectedSession) return;
+  if (props.selectedSession === undefined) return;
 
   const protocol = props.selectedSession.url.startsWith("https")
     ? "https"

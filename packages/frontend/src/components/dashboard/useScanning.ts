@@ -12,7 +12,18 @@ export function useScanning(
 
   const scanUrl = ref("");
   const isScanning = ref(false);
-  const recentSessions = ref<any[]>([]);
+  type DashboardActivity = {
+    id: string;
+    title: string;
+    url: string;
+    description?: string;
+    createdAt: Date;
+    status: string;
+    type: string;
+    attackSessionId?: string;
+  };
+
+  const recentSessions = ref<DashboardActivity[]>([]);
   const customHeaders = ref<Array<{ name: string; value: string }>>([]);
 
   const addCustomHeader = () => {
@@ -43,13 +54,15 @@ export function useScanning(
     }
   };
 
-  const loadRecentSessions = async () => {
+  const loadRecentSessions = (): void => {
     try {
-      const stored = sdk.storage.get() as {
-        dashboardActivities?: any[];
-      } | null;
+      const stored = sdk.storage.get() as
+        | {
+            dashboardActivities?: DashboardActivity[];
+          }
+        | undefined;
       if (
-        stored?.dashboardActivities &&
+        stored?.dashboardActivities !== undefined &&
         Array.isArray(stored.dashboardActivities)
       ) {
         recentSessions.value = stored.dashboardActivities
@@ -104,27 +117,46 @@ export function useScanning(
       const headersToSend =
         Object.keys(validHeaders).length > 0 ? validHeaders : {};
 
-      const result: Result<{ supportsIntrospection: boolean; schema?: any }> =
-        await sdk.backend.testGraphQLEndpoint(
-          scanUrl.value.trim(),
-          headersToSend,
-        );
+      const result: Result<{
+        supportsIntrospection: boolean;
+        schema?: unknown;
+      }> = await sdk.backend.testGraphQLEndpoint(
+        scanUrl.value.trim(),
+        headersToSend,
+      );
 
       if (result.kind === "Error") {
         sdk.window.showToast(`Scan failed: ${result.error}`, {
           variant: "error",
         });
       } else {
-        const currentStorage: any = sdk.storage.get() || {};
+        type StorageData = {
+          explorerSessions?: Array<{
+            id: string;
+            title: string;
+            url: string;
+            schema?: unknown;
+            supportsIntrospection?: boolean;
+            createdAt: Date;
+            status: string;
+          }>;
+          selectedExplorerSessionId?: string;
+          dashboardActivities?: DashboardActivity[];
+        };
+        const currentStorage: StorageData =
+          (sdk.storage.get() as StorageData | undefined) ?? {};
 
         if (
-          !currentStorage.dashboardActivities ||
+          currentStorage.dashboardActivities === undefined ||
           !Array.isArray(currentStorage.dashboardActivities)
         ) {
           currentStorage.dashboardActivities = [];
         }
 
-        if (result.value.supportsIntrospection && result.value.schema) {
+        if (
+          result.value.supportsIntrospection === true &&
+          result.value.schema !== undefined
+        ) {
           const sessionData = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2),
             title: getDomainName(scanUrl.value.trim()),
@@ -136,7 +168,7 @@ export function useScanning(
           };
 
           if (
-            !currentStorage.explorerSessions ||
+            currentStorage.explorerSessions === undefined ||
             !Array.isArray(currentStorage.explorerSessions)
           ) {
             currentStorage.explorerSessions = [];
@@ -164,7 +196,7 @@ export function useScanning(
 
           // @ts-expect-error - SDK storage.set accepts any object
           await sdk.storage.set(currentStorage);
-          await loadRecentSessions();
+          loadRecentSessions();
 
           sdk.window.showToast("Schema scanned successfully!", {
             variant: "success",
@@ -178,7 +210,7 @@ export function useScanning(
             }
           }, 800);
         } else {
-          const activityData: any = {
+          const activityData: DashboardActivity = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2),
             title: `Scan attempted: ${getDomainName(scanUrl.value.trim())}`,
             url: scanUrl.value.trim(),
@@ -197,7 +229,7 @@ export function useScanning(
 
           // @ts-expect-error - SDK storage.set accepts any object
           await sdk.storage.set(currentStorage);
-          await loadRecentSessions();
+          loadRecentSessions();
 
           sdk.window.showToast(
             "GraphQL endpoint detected, but introspection is disabled. Cannot explore schema.",
@@ -217,26 +249,26 @@ export function useScanning(
     }
   };
 
-  const selectSession = (session: any) => {
+  const selectSession = (session: DashboardActivity) => {
     if (session.type === "attack") {
-      if (navigateTo) {
+      if (navigateTo !== undefined) {
         localStorage.setItem(
           "graphql-analyzer-navigate-to-attack",
-          session.attackSessionId || "",
+          session.attackSessionId ?? "",
         );
         navigateTo("Attacks");
       }
       return;
     }
 
-    if (navigateTo) {
+    if (navigateTo !== undefined) {
       navigateTo("Explorer");
     }
   };
 
-  const deleteAllData = async () => {
+  const deleteAllData = async (): Promise<void> => {
     try {
-      const emptyStorage: any = {};
+      const emptyStorage: Record<string, unknown> = {};
       // @ts-expect-error - SDK storage.set accepts any object
       await sdk.storage.set(emptyStorage);
 
@@ -254,13 +286,18 @@ export function useScanning(
     const url = event.detail.url;
     const headers = event.detail.headers;
 
-    if (url) {
+    if (url !== undefined && url !== "") {
       scanUrl.value = url;
 
-      if (headers && Object.keys(headers).length > 0) {
+      if (headers !== undefined && Object.keys(headers).length > 0) {
         customHeaders.value = [];
         Object.entries(headers).forEach(([key, value]) => {
-          if (key.toLowerCase() !== "content-length" && key && value) {
+          if (
+            key.toLowerCase() !== "content-length" &&
+            key !== "" &&
+            value !== undefined &&
+            value !== ""
+          ) {
             customHeaders.value.push({ name: key, value: value as string });
           }
         });
@@ -286,21 +323,28 @@ export function useScanning(
       "graphql-analyzer-scan-processed",
     );
 
-    if (pendingUrl && !scanProcessed) {
+    if (pendingUrl !== null && pendingUrl !== "" && scanProcessed === null) {
       scanUrl.value = pendingUrl;
 
-      if (pendingHeaders) {
+      if (pendingHeaders !== null && pendingHeaders !== "") {
         try {
-          const headers = JSON.parse(pendingHeaders);
+          const headers = JSON.parse(pendingHeaders) as Record<string, string>;
           if (Object.keys(headers).length > 0) {
             customHeaders.value = [];
             Object.entries(headers).forEach(([key, value]) => {
-              if (key.toLowerCase() !== "content-length" && key && value) {
-                customHeaders.value.push({ name: key, value: value as string });
+              if (
+                key.toLowerCase() !== "content-length" &&
+                key !== "" &&
+                value !== undefined &&
+                value !== ""
+              ) {
+                customHeaders.value.push({ name: key, value: value });
               }
             });
           }
-        } catch {}
+        } catch {
+          // Ignore parse errors
+        }
       }
 
       localStorage.removeItem("graphql-analyzer-context-scan-url");

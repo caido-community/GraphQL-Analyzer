@@ -5,8 +5,8 @@ import type { FrontendSDK } from "../types";
  */
 export class BackgroundAttackService {
   private sdk: FrontendSDK;
-  private pollInterval: number | null = null;
-  private static instance: BackgroundAttackService | null = null;
+  private pollInterval: number | undefined = undefined;
+  private static instance: BackgroundAttackService | undefined = undefined;
 
   constructor(sdk: FrontendSDK) {
     this.sdk = sdk;
@@ -37,9 +37,9 @@ export class BackgroundAttackService {
    * Stop background attack polling
    */
   stopBackgroundAttack(): void {
-    if (this.pollInterval) {
+    if (this.pollInterval !== undefined) {
       clearInterval(this.pollInterval);
-      this.pollInterval = null;
+      this.pollInterval = undefined;
     }
 
     localStorage.removeItem("graphql-analyzer-background-attack");
@@ -49,7 +49,8 @@ export class BackgroundAttackService {
    * Check if there's a background attack running
    */
   hasBackgroundAttack(): boolean {
-    return !!localStorage.getItem("graphql-analyzer-background-attack");
+    const stored = localStorage.getItem("graphql-analyzer-background-attack");
+    return stored !== null && stored !== "";
   }
 
   /**
@@ -57,9 +58,13 @@ export class BackgroundAttackService {
    */
   resumeBackgroundAttack(): void {
     const stored = localStorage.getItem("graphql-analyzer-background-attack");
-    if (stored) {
+    if (stored !== null && stored !== "") {
       try {
-        const attackInfo = JSON.parse(stored);
+        const attackInfo = JSON.parse(stored) as {
+          sessionId: string;
+          attackTypes: string[];
+          startTime: number;
+        };
         this.startPolling(attackInfo.sessionId);
       } catch (error) {
         // Invalid stored data, clean up
@@ -71,16 +76,22 @@ export class BackgroundAttackService {
   /**
    * Get background attack info
    */
-  getBackgroundAttackInfo(): any | null {
+  getBackgroundAttackInfo():
+    | { sessionId: string; attackTypes: string[]; startTime: number }
+    | undefined {
     const stored = localStorage.getItem("graphql-analyzer-background-attack");
-    if (stored) {
+    if (stored !== null && stored !== "") {
       try {
-        return JSON.parse(stored);
+        return JSON.parse(stored) as {
+          sessionId: string;
+          attackTypes: string[];
+          startTime: number;
+        };
       } catch (error) {
-        return null;
+        return undefined;
       }
     }
-    return null;
+    return undefined;
   }
 
   /**
@@ -120,16 +131,16 @@ export class BackgroundAttackService {
             detail: {
               sessionId,
               status,
-              progress: status.progress || 0,
-              results: status.results || [],
+              progress: status.progress ?? 0,
+              results: status.results ?? [],
             },
           }),
         );
 
-        if (status.isComplete) {
+        if (status.isComplete === true) {
           this.stopBackgroundAttack();
 
-          const results = status.results || [];
+          const results = status.results ?? [];
           const totalFindings = results.reduce(
             (sum: number, r: { findings: Array<{ severity: string }> }) =>
               sum + r.findings.length,
@@ -179,7 +190,7 @@ export class BackgroundAttackService {
    * Get singleton instance
    */
   static getInstance(sdk: FrontendSDK): BackgroundAttackService {
-    if (!BackgroundAttackService.instance) {
+    if (BackgroundAttackService.instance === undefined) {
       BackgroundAttackService.instance = new BackgroundAttackService(sdk);
     }
     return BackgroundAttackService.instance;
@@ -189,17 +200,16 @@ export class BackgroundAttackService {
 /**
  * Create and export singleton instance
  */
-let backgroundAttackServiceInstance: BackgroundAttackService | null = null;
+let backgroundAttackServiceInstance: BackgroundAttackService | undefined =
+  undefined;
 
 export function createBackgroundAttackService(
   sdk: FrontendSDK,
 ): BackgroundAttackService {
-  if (!backgroundAttackServiceInstance) {
+  if (backgroundAttackServiceInstance === undefined) {
     backgroundAttackServiceInstance = BackgroundAttackService.getInstance(sdk);
     // Auto-resume any background attacks on service creation
     backgroundAttackServiceInstance.resumeBackgroundAttack();
   }
   return backgroundAttackServiceInstance;
 }
-
-export { backgroundAttackServiceInstance as backgroundAttackService };

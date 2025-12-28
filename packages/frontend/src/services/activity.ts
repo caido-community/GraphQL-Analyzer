@@ -33,11 +33,24 @@ export class ActivityService {
         attackSessionId: attackSessionId,
       };
 
-      const currentStorage = (this.sdk.storage.get() as any) || {};
+      type StorageData = {
+        dashboardActivities?: Array<{
+          id: string;
+          title: string;
+          url: string;
+          description?: string;
+          createdAt: Date;
+          status: string;
+          type: string;
+          attackSessionId?: string;
+        }>;
+      };
+      const currentStorage: StorageData =
+        (this.sdk.storage.get() as StorageData | undefined) ?? {};
 
       // Initialize dashboard activities if not present
       if (
-        !currentStorage.dashboardActivities ||
+        currentStorage.dashboardActivities === undefined ||
         !Array.isArray(currentStorage.dashboardActivities)
       ) {
         currentStorage.dashboardActivities = [];
@@ -74,13 +87,11 @@ export class ActivityService {
 /**
  * Create and export singleton instance
  */
-let activityServiceInstance: ActivityService | null = null;
+let activityServiceInstance: ActivityService | undefined = undefined;
 
 export function createActivityService(sdk: FrontendSDK): ActivityService {
-  if (!activityServiceInstance) {
+  if (activityServiceInstance === undefined) {
     activityServiceInstance = new ActivityService(sdk);
   }
   return activityServiceInstance;
 }
-
-export { activityServiceInstance as activityService };

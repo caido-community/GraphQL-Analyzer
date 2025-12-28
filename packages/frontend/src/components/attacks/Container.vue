@@ -22,6 +22,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { AttackTab } from "@/components/attacks";
 import { CodeEditor } from "@/components/common";
+import type { ExplorerSession } from "@/components/Explorer/useSessions";
 import { useSDK } from "@/plugins/sdk";
 import { createActivityService } from "@/services/activity";
 import { createBackgroundAttackService } from "@/services/backgroundAttacks";
@@ -38,29 +39,55 @@ defineProps<{
   ) => void;
 }>();
 
+// Types
+type SelectedRequest =
+  | {
+      id?: string;
+      url?: string;
+      host?: string;
+      port?: number;
+      path?: string;
+      raw?: string;
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+      protocol?: string;
+      tls?: boolean;
+    }
+  | undefined;
+
+type CodeEditorInstance =
+  | {
+      setValue?: (value: string) => void;
+      getValue?: () => string;
+      getEditorView?: () => EditorView;
+      destroy?: () => void;
+    }
+  | undefined;
+
 // State
-const sessions = ref<any[]>([]);
-const selectedSessionId = ref<string | null>(null);
+const sessions = ref<ExplorerSession[]>([]);
+const selectedSessionId = ref<string | undefined>(undefined);
 const customUrl = ref("");
 const useCustomUrl = ref(false);
-const selectedRequest = ref<any | null>(null);
+const selectedRequest = ref<SelectedRequest>(undefined);
 const useSelectedRequest = ref(false);
 const isAttacking = ref(false);
 const attackProgress = ref(0);
 const attackResults = ref<AttackResult[]>([]);
-const selectedResult = ref<AttackResult | null>(null);
+const selectedResult = ref<AttackResult | undefined>(undefined);
 const attackCancelled = ref(false);
-const currentAttackSessionId = ref<string | null>(null);
-const pollInterval = ref<number | null>(null);
+const currentAttackSessionId = ref<string | undefined>(undefined);
+const pollInterval = ref<number | undefined>(undefined);
 
 // Attack Sessions State
 const attackSessions = ref<AttackSession[]>([]);
-const selectedAttackSessionId = ref<string | null>(null);
-const currentActiveAttackId = ref<string | null>(null);
+const selectedAttackSessionId = ref<string | undefined>(undefined);
+const currentActiveAttackId = ref<string | undefined>(undefined);
 
 // SDK Editors
-const requestEditor = ref<any>(null);
-const responseEditor = ref<any>(null);
+const requestEditor = ref<CodeEditorInstance>(undefined);
+const responseEditor = ref<CodeEditorInstance>(undefined);
 
 // Attack Data expansion state
 const payloadExpanded = ref(false);
@@ -122,28 +149,26 @@ const availableAttacks = [
 
 // Computed
 const targetUrl = computed(() => {
-  if (useSelectedRequest.value && selectedRequest.value) {
+  if (
+    useSelectedRequest.value === true &&
+    selectedRequest.value !== undefined
+  ) {
     try {
-      const request = selectedRequest.value as {
-        port?: number;
-        host?: string;
-        path?: string;
-        url?: string;
-      };
-      
+      const request = selectedRequest.value;
+
       // If url is directly available, use it
-      if (request.url) {
+      if (request.url !== undefined && request.url !== "") {
         return request.url;
       }
-      
+
       // Otherwise construct from parts
-      if (request.host) {
+      if (request.host !== undefined && request.host !== "") {
         const protocol = request.port === 443 ? "https" : "http";
         const portPart =
           request.port === 80 || request.port === 443
             ? ""
-            : `:${request.port || 80}`;
-        const path = request.path || "/graphql";
+            : `:${request.port ?? 80}`;
+        const path = request.path ?? "/graphql";
         return `${protocol}://${request.host}${portPart}${path}`;
       }
     } catch (error) {
@@ -151,26 +176,32 @@ const targetUrl = computed(() => {
     }
   }
 
-  if (useCustomUrl.value) {
+  if (useCustomUrl.value === true) {
     return customUrl.value;
   }
   const session = sessions.value.find((s) => s.id === selectedSessionId.value);
-  return session?.url || "";
+  return session?.url ?? "";
 });
 
 const canExecuteAttack = computed(() => {
   return (
-    !isAttacking.value &&
+    isAttacking.value === false &&
     targetUrl.value.trim() !== "" &&
     selectedAttacks.value.length > 0
   );
 });
 
 const selectedSession = computed(() => {
+  if (selectedSessionId.value === undefined) {
+    return undefined;
+  }
   return sessions.value.find((s) => s.id === selectedSessionId.value);
 });
 
 const selectedAttackSession = computed(() => {
+  if (selectedAttackSessionId.value === undefined) {
+    return undefined;
+  }
   return attackSessions.value.find(
     (s) => s.id === selectedAttackSessionId.value,
   );
@@ -216,7 +247,10 @@ const attackResultsTableData = computed(() => {
 
         existingResult.findings = mergedFindings;
         // Update timing to use the most recent
-        if (result.response?.timing && existingResult.response) {
+        if (
+          result.response?.timing !== undefined &&
+          existingResult.response !== undefined
+        ) {
           existingResult.response.timing = result.response.timing;
         }
       }
@@ -227,9 +261,9 @@ const attackResultsTableData = computed(() => {
     id: index + 1,
     attackType: result.attackType,
     status: result.status,
-    statusCode: result.response?.statusCode || 0,
-    contentLength: result.response?.body?.length || 0,
-    timing: result.response?.timing || 0,
+    statusCode: result.response?.statusCode ?? 0,
+    contentLength: result.response?.body?.length ?? 0,
+    timing: result.response?.timing ?? 0,
     findingsCount: result.findings.length,
     highSeverityCount: result.findings.filter(
       (f) => f.severity === "critical" || f.severity === "high",
@@ -297,7 +331,7 @@ const copyToClipboard = async (text: string) => {
   }
 };
 
-const getMaxSeverity = (findings: any[]) => {
+const getMaxSeverity = (findings: AttackResult["findings"]) => {
   if (findings.some((f) => f.severity === "critical")) return "critical";
   if (findings.some((f) => f.severity === "high")) return "high";
   if (findings.some((f) => f.severity === "medium")) return "medium";
@@ -317,17 +351,24 @@ const toggleSelectAll = () => {
 };
 
 // Load Explorer sessions (separate from attack sessions)
-const loadSessions = async () => {
+const loadSessions = () => {
   try {
-    const stored = sdk.storage.get() as { explorerSessions?: any[] } | null;
-    if (stored?.explorerSessions && Array.isArray(stored.explorerSessions)) {
-      sessions.value = stored.explorerSessions.map((s: any) => ({
+    const stored = sdk.storage.get() as
+      | {
+          explorerSessions?: ExplorerSession[];
+        }
+      | undefined;
+    if (
+      stored?.explorerSessions !== undefined &&
+      Array.isArray(stored.explorerSessions)
+    ) {
+      sessions.value = stored.explorerSessions.map((s: ExplorerSession) => ({
         ...s,
         createdAt: new Date(s.createdAt),
       }));
 
-      if (sessions.value.length > 0 && !selectedSessionId.value) {
-        selectedSessionId.value = sessions.value[0].id;
+      if (sessions.value.length > 0 && selectedSessionId.value === undefined) {
+        selectedSessionId.value = sessions.value[0]?.id;
       }
     }
   } catch (error) {
@@ -338,7 +379,7 @@ const loadSessions = async () => {
 // Attack Sessions Storage Functions
 const saveAttackSessions = async () => {
   try {
-    const currentStorage = (sdk.storage.get() as any) || {};
+    const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
     currentStorage.attackSessions = attackSessions.value;
     currentStorage.selectedAttackSessionId = selectedAttackSessionId.value;
     // @ts-expect-error - SDK storage.set accepts any object
@@ -350,13 +391,18 @@ const saveAttackSessions = async () => {
   }
 };
 
-const loadAttackSessions = async () => {
+const loadAttackSessions = () => {
   try {
-    const stored = sdk.storage.get() as {
-      attackSessions?: any[];
-      selectedAttackSessionId?: string;
-    } | null;
-    if (stored?.attackSessions && Array.isArray(stored.attackSessions)) {
+    const stored = sdk.storage.get() as
+      | {
+          attackSessions?: AttackSession[];
+          selectedAttackSessionId?: string;
+        }
+      | undefined;
+    if (
+      stored?.attackSessions !== undefined &&
+      Array.isArray(stored.attackSessions)
+    ) {
       attackSessions.value = stored.attackSessions.map((session) => ({
         ...session,
         createdAt: new Date(session.createdAt),
@@ -366,22 +412,22 @@ const loadAttackSessions = async () => {
       }));
       // Only restore selected session if it still exists
       if (
-        stored.selectedAttackSessionId &&
+        stored.selectedAttackSessionId !== undefined &&
         attackSessions.value.some(
           (s) => s.id === stored.selectedAttackSessionId,
         )
       ) {
         selectedAttackSessionId.value = stored.selectedAttackSessionId;
       } else {
-        selectedAttackSessionId.value = null; // Don't auto-select first session
+        selectedAttackSessionId.value = undefined; // Don't auto-select first session
       }
     } else {
       attackSessions.value = [];
-      selectedAttackSessionId.value = null;
+      selectedAttackSessionId.value = undefined;
     }
   } catch (error) {
     attackSessions.value = [];
-    selectedAttackSessionId.value = null;
+    selectedAttackSessionId.value = undefined;
   }
 };
 
@@ -416,28 +462,30 @@ const selectAttackSession = (sessionId: string) => {
   if (session) {
     // Load the attack results for this session
     attackResults.value = session.results;
-    selectedResult.value = null;
+    selectedResult.value = undefined;
 
     // Clear any previous editors
-    requestEditor.value = null;
-    responseEditor.value = null;
+    requestEditor.value = undefined;
+    responseEditor.value = undefined;
 
     // Restore target selection state based on session config
     if (session.config.targetType === "request") {
       useSelectedRequest.value = true;
       useCustomUrl.value = false;
-      selectedRequest.value = session.config.selectedRequestData || null;
-      selectedSessionId.value = null;
+      selectedRequest.value =
+        (session.config.selectedRequestData as SelectedRequest | undefined) ??
+        undefined;
+      selectedSessionId.value = undefined;
     } else if (session.config.targetType === "custom") {
       useSelectedRequest.value = false;
       useCustomUrl.value = true;
       customUrl.value = session.config.targetUrl;
-      selectedSessionId.value = null;
+      selectedSessionId.value = undefined;
     } else {
       // Default to session
       useSelectedRequest.value = false;
       useCustomUrl.value = false;
-      selectedSessionId.value = session.config.sessionId || null;
+      selectedSessionId.value = session.config.sessionId ?? undefined;
     }
 
     // Update UI state based on session status
@@ -452,15 +500,15 @@ const selectAttackSession = (sessionId: string) => {
     } else if (session.status !== "running") {
       // Clear attacking state for completed sessions
       isAttacking.value = false;
-      currentAttackSessionId.value = null;
+      currentAttackSessionId.value = undefined;
     }
 
     // Force refresh of the UI in next tick
     nextTick(() => {
       // Trigger reactivity for computed properties
-      if (selectedResult.value) {
+      if (selectedResult.value !== undefined) {
         const currentResult = selectedResult.value;
-        selectedResult.value = null;
+        selectedResult.value = undefined;
         nextTick(() => {
           selectedResult.value = currentResult;
         });
@@ -493,19 +541,19 @@ const deleteAttackSession = (sessionId: string) => {
       currentActiveAttackId.value === sessionId
     ) {
       backgroundAttackService.stopBackgroundAttack();
-      currentActiveAttackId.value = null;
-      currentAttackSessionId.value = null;
+      currentActiveAttackId.value = undefined;
+      currentAttackSessionId.value = undefined;
       isAttacking.value = false;
     }
 
     attackSessions.value.splice(index, 1);
 
     if (selectedAttackSessionId.value === sessionId) {
-      selectedAttackSessionId.value = null; // Don't auto-select another session
+      selectedAttackSessionId.value = undefined; // Don't auto-select another session
       attackResults.value = [];
-      selectedResult.value = null;
-      requestEditor.value = null;
-      responseEditor.value = null;
+      selectedResult.value = undefined;
+      requestEditor.value = undefined;
+      responseEditor.value = undefined;
     }
 
     saveAttackSessions();
@@ -540,9 +588,9 @@ const createNewAttackSession = async (showToast = true) => {
 
   // Clear results
   attackResults.value = [];
-  selectedResult.value = null;
-  requestEditor.value = null;
-  responseEditor.value = null;
+  selectedResult.value = undefined;
+  requestEditor.value = undefined;
+  responseEditor.value = undefined;
 
   // Save the new session
   await saveAttackSessions();
@@ -569,13 +617,13 @@ const executeAttacks = async () => {
   attackCancelled.value = false;
   attackProgress.value = 0;
   attackResults.value = [];
-  selectedResult.value = null; // Clear previous selection
+  selectedResult.value = undefined; // Clear previous selection
 
   try {
     // Build custom headers object
     const headersObj: Record<string, string> = {};
     customHeaders.value.forEach((header) => {
-      if (header.name.trim() && header.value.trim()) {
+      if (header.name.trim() !== "" && header.value.trim() !== "") {
         headersObj[header.name.trim()] = header.value.trim();
       }
     });
@@ -585,9 +633,10 @@ const executeAttacks = async () => {
     let useOriginalHeaders = false;
 
     if (
-      useSelectedRequest.value &&
-      selectedRequest.value &&
-      selectedRequest.value.raw
+      useSelectedRequest.value === true &&
+      selectedRequest.value !== undefined &&
+      selectedRequest.value.raw !== undefined &&
+      selectedRequest.value.raw !== ""
     ) {
       // Parse headers from raw HTTP request
       useOriginalHeaders = true;
@@ -601,7 +650,7 @@ const executeAttacks = async () => {
 
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
-          if (!line) {
+          if (line === undefined || line === "") {
             // Empty line signals end of headers
             if (inHeaders) break;
             continue;
@@ -624,7 +673,7 @@ const executeAttacks = async () => {
             const colonIndex = trimmedLine.indexOf(":");
             const headerName = trimmedLine.substring(0, colonIndex).trim();
             const headerValue = trimmedLine.substring(colonIndex + 1).trim();
-            if (headerName && headerValue) {
+            if (headerName !== "" && headerValue !== "") {
               // Exclude Content-Length as it will be recalculated
               if (headerName.toLowerCase() !== "content-length") {
                 originalHeaders[headerName] = headerValue;
@@ -641,7 +690,7 @@ const executeAttacks = async () => {
 
     const config: AttackConfig = {
       targetUrl: targetUrl.value,
-      sessionId: selectedSessionId.value || undefined,
+      sessionId: selectedSessionId.value ?? undefined,
       attackTypes: selectedAttacks.value,
       maxDepth: maxDepth.value,
       batchSize: batchSize.value,
@@ -718,7 +767,7 @@ const executeAttacks = async () => {
 
     // Clear results since we're starting a new attack
     attackResults.value = [];
-    selectedResult.value = null;
+    selectedResult.value = undefined;
 
     // Save attack sessions
     await saveAttackSessions();
@@ -736,7 +785,7 @@ const executeAttacks = async () => {
       config.attackTypes,
     );
   } catch (error) {
-    if (!attackCancelled.value) {
+    if (attackCancelled.value === false) {
       sdk.window.showToast("Attack execution failed", { variant: "error" });
     }
     isAttacking.value = false;
@@ -747,9 +796,9 @@ const executeAttacks = async () => {
 
 // Stop polling
 const stopAttackPolling = () => {
-  if (pollInterval.value) {
+  if (pollInterval.value !== undefined) {
     clearInterval(pollInterval.value);
-    pollInterval.value = null;
+    pollInterval.value = undefined;
   }
 };
 
@@ -760,7 +809,7 @@ const cancelAttack = async () => {
   attackProgress.value = 0;
 
   // Cancel backend attack session if we have one
-  if (currentAttackSessionId.value) {
+  if (currentAttackSessionId.value !== undefined) {
     try {
       await sdk.backend.cancelAttackSession(currentAttackSessionId.value);
     } catch (error) {
@@ -774,16 +823,16 @@ const cancelAttack = async () => {
   stopAttackPolling();
 
   // Update any running attack session to cancelled status
-  if (currentActiveAttackId.value) {
+  if (currentActiveAttackId.value !== undefined) {
     updateAttackSession(currentActiveAttackId.value, {
       status: "cancelled",
       completedAt: new Date(),
     });
-    currentActiveAttackId.value = null;
+    currentActiveAttackId.value = undefined;
   }
 
   // Clear all attack-related state
-  currentAttackSessionId.value = null;
+  currentAttackSessionId.value = undefined;
 
   // Save the updated sessions to persist the cancellation
   await saveAttackSessions();
@@ -807,11 +856,20 @@ const selectResult = (result: AttackResult) => {
 };
 
 // Simple SDK editors
-let requestEditorView: any = null;
-let responseEditorView: any = null;
+type EditorView =
+  | {
+      dispatch: (changes: {
+        changes: { from: number; to: number; insert: string };
+      }) => void;
+      state?: { doc: { length: number } };
+    }
+  | undefined;
 
-const updateEditorContent = (editorView: any, content: string) => {
-  if (editorView) {
+let requestEditorView: EditorView = undefined;
+let responseEditorView: EditorView = undefined;
+
+const updateEditorContent = (editorView: EditorView, content: string) => {
+  if (editorView !== undefined && editorView.state !== undefined) {
     editorView.dispatch({
       changes: {
         from: 0,
@@ -828,7 +886,7 @@ const mountSDKEditors = async () => {
     "response-editor-container",
   );
 
-  if (!selectedResult.value) {
+  if (selectedResult.value === undefined) {
     if (requestContainer)
       requestContainer.innerHTML =
         '<div class="h-full flex items-center justify-center text-surface-500">No request selected</div>';
@@ -841,29 +899,41 @@ const mountSDKEditors = async () => {
   await nextTick();
 
   // Cleanup existing editors
-  if (requestEditor.value) {
+  if (requestEditor.value !== undefined && requestEditor.value !== null) {
     try {
-      requestEditor.value.destroy?.();
+      if (
+        typeof requestEditor.value === "object" &&
+        "destroy" in requestEditor.value &&
+        typeof requestEditor.value.destroy === "function"
+      ) {
+        requestEditor.value.destroy();
+      }
     } catch (e) {
       // Ignore cleanup errors
     }
-    requestEditor.value = null;
-    requestEditorView = null;
+    requestEditor.value = undefined;
+    requestEditorView = undefined;
   }
-  if (responseEditor.value) {
+  if (responseEditor.value !== undefined && responseEditor.value !== null) {
     try {
-      responseEditor.value.destroy?.();
+      if (
+        typeof responseEditor.value === "object" &&
+        "destroy" in responseEditor.value &&
+        typeof responseEditor.value.destroy === "function"
+      ) {
+        responseEditor.value.destroy();
+      }
     } catch (e) {
       // Ignore cleanup errors
     }
-    responseEditor.value = null;
-    responseEditorView = null;
+    responseEditor.value = undefined;
+    responseEditorView = undefined;
   }
 
   // Mount request editor
   if (requestContainer) {
     try {
-      if (selectedResult.value.rawRequest) {
+      if (selectedResult.value.rawRequest !== undefined) {
         requestContainer.innerHTML = "";
         const editor = sdk.ui.httpRequestEditor();
         const editorElement = editor.getElement();
@@ -873,7 +943,7 @@ const mountSDKEditors = async () => {
 
         requestContainer.appendChild(editorElement);
         requestEditorView = editor.getEditorView();
-        requestEditor.value = editor;
+        requestEditor.value = editor as CodeEditorInstance;
 
         updateEditorContent(requestEditorView, selectedResult.value.rawRequest);
       } else {
@@ -888,7 +958,10 @@ const mountSDKEditors = async () => {
   // Mount response editor
   if (responseContainer) {
     try {
-      if (selectedResult.value.rawResponse) {
+      if (
+        selectedResult.value.rawResponse !== undefined &&
+        selectedResult.value.rawResponse !== ""
+      ) {
         responseContainer.innerHTML = "";
         const editor = sdk.ui.httpResponseEditor();
         const editorElement = editor.getElement();
@@ -898,7 +971,7 @@ const mountSDKEditors = async () => {
 
         responseContainer.appendChild(editorElement);
         responseEditorView = editor.getEditorView();
-        responseEditor.value = editor;
+        responseEditor.value = editor as CodeEditorInstance;
 
         updateEditorContent(
           responseEditorView,
@@ -918,7 +991,7 @@ const mountSDKEditors = async () => {
 watch(
   selectedResult,
   () => {
-    if (selectedResult.value) {
+    if (selectedResult.value !== undefined) {
       mountSDKEditors();
     }
   },
@@ -928,20 +1001,22 @@ watch(
 // Clear all results
 const clearResults = () => {
   attackResults.value = [];
-  selectedResult.value = null;
+  selectedResult.value = undefined;
 };
 
 // Create Caido finding manually
-const createCaidoFinding = async (finding: any) => {
+const createCaidoFinding = async (
+  finding: AttackResult["findings"][number],
+) => {
   try {
-    if (!selectedResult.value?.requestId) {
+    if (selectedResult.value?.requestId === undefined) {
       sdk.window.showToast("No request ID available for finding creation", {
         variant: "error",
       });
       return;
     }
 
-    if (!sdk.backend?.createCaidoFinding) {
+    if (sdk.backend?.createCaidoFinding === undefined) {
       sdk.window.showToast("Create finding functionality not available", {
         variant: "error",
       });
@@ -973,7 +1048,7 @@ const createCaidoFinding = async (finding: any) => {
 
 // Create finding from table action button
 const createFindingFromResult = async (result: AttackResult) => {
-  if (!result.findings || result.findings.length === 0) {
+  if (result.findings.length === 0) {
     sdk.window.showToast("No findings available to create", {
       variant: "error",
     });
@@ -983,14 +1058,11 @@ const createFindingFromResult = async (result: AttackResult) => {
   // If multiple findings, create the highest severity one
   const sortedFindings = result.findings.sort((a, b) => {
     const severityOrder = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-    return (
-      (severityOrder[b.severity] || 0) -
-      (severityOrder[a.severity] || 0)
-    );
+    return (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0);
   });
 
   const finding = sortedFindings[0];
-  if (!finding) {
+  if (finding === undefined) {
     sdk.window.showToast("No finding to create", {
       variant: "error",
     });
@@ -998,7 +1070,7 @@ const createFindingFromResult = async (result: AttackResult) => {
   }
 
   try {
-    if (!result.requestId) {
+    if (result.requestId === undefined) {
       sdk.window.showToast("No request ID available for finding creation", {
         variant: "error",
       });
@@ -1030,7 +1102,7 @@ const createFindingFromResult = async (result: AttackResult) => {
 // Send to replay session
 const sendToReplay = async (result: AttackResult) => {
   try {
-    if (!result.rawRequest) {
+    if (result.rawRequest === undefined || result.rawRequest === "") {
       sdk.window.showToast("No request data available for replay", {
         variant: "error",
       });
@@ -1074,7 +1146,7 @@ const sendToReplay = async (result: AttackResult) => {
 };
 
 // Helper to get finding severity class
-const getFindingSeverityClass = (findings: any[]) => {
+const getFindingSeverityClass = (findings: AttackResult["findings"]) => {
   if (findings.some((f) => f.severity === "critical"))
     return "bg-red-600 text-red-100";
   if (findings.some((f) => f.severity === "high"))
@@ -1089,7 +1161,7 @@ const getFindingSeverityClass = (findings: any[]) => {
 // Helper to get attack type label
 const getAttackTypeLabel = (attackType: string) => {
   return (
-    availableAttacks.find((a) => a.value === attackType)?.label || attackType
+    availableAttacks.find((a) => a.value === attackType)?.label ?? attackType
   );
 };
 
@@ -1119,7 +1191,7 @@ onMounted(() => {
   const attackSessionId = localStorage.getItem(
     "graphql-analyzer-navigate-to-attack",
   );
-  if (attackSessionId) {
+  if (attackSessionId !== null && attackSessionId !== "") {
     localStorage.removeItem("graphql-analyzer-navigate-to-attack");
 
     // Wait for attack sessions to load, then select the specified one
@@ -1137,16 +1209,20 @@ onMounted(() => {
   const storedRequest = localStorage.getItem(
     "graphql-analyzer-context-attack-request",
   );
-  if (storedRequest) {
+  if (storedRequest !== null && storedRequest !== "") {
     try {
       const requestData = JSON.parse(storedRequest);
       selectedRequest.value = requestData;
       useSelectedRequest.value = true;
       useCustomUrl.value = false;
-      selectedSessionId.value = null;
+      selectedSessionId.value = undefined;
 
       // Parse and populate custom headers from the request
-      if (requestData.raw) {
+      if (
+        requestData.raw !== undefined &&
+        requestData.raw !== null &&
+        requestData.raw !== ""
+      ) {
         try {
           const raw = requestData.raw;
           const lines = raw.split(/\r?\n/);
@@ -1155,7 +1231,7 @@ onMounted(() => {
 
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            if (!line) {
+            if (line === undefined || line === "") {
               if (inHeaders) break;
               continue;
             }
@@ -1167,17 +1243,21 @@ onMounted(() => {
               continue;
             }
 
-            if (inHeaders && trimmedLine === "") {
+            if (inHeaders === true && trimmedLine === "") {
               break;
             }
 
-            if (inHeaders && trimmedLine.includes(":")) {
+            if (
+              inHeaders === true &&
+              typeof trimmedLine === "string" &&
+              trimmedLine.includes(":")
+            ) {
               const colonIndex = trimmedLine.indexOf(":");
               const headerName = trimmedLine.substring(0, colonIndex).trim();
               const headerValue = trimmedLine.substring(colonIndex + 1).trim();
               if (
-                headerName &&
-                headerValue &&
+                headerName !== "" &&
+                headerValue !== "" &&
                 headerName.toLowerCase() !== "content-length"
               ) {
                 extractedHeaders[headerName] = headerValue;
@@ -1242,15 +1322,19 @@ onMounted(() => {
 
   // Listen for context attack events
   const handleContextAttack = (event: CustomEvent) => {
-    const requestData = event.detail.request;
-    if (requestData) {
+    const requestData = event.detail.request as SelectedRequest | undefined;
+    if (requestData !== undefined) {
       selectedRequest.value = requestData;
       useSelectedRequest.value = true;
       useCustomUrl.value = false;
-      selectedSessionId.value = null;
+      selectedSessionId.value = undefined;
 
       // Parse and populate custom headers from the request
-      if (requestData.raw) {
+      if (
+        requestData.raw !== undefined &&
+        requestData.raw !== null &&
+        requestData.raw !== ""
+      ) {
         try {
           const raw = requestData.raw;
           const lines = raw.split(/\r?\n/);
@@ -1259,7 +1343,7 @@ onMounted(() => {
 
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            if (!line) {
+            if (line === undefined || line === "") {
               if (inHeaders) break;
               continue;
             }
@@ -1271,17 +1355,21 @@ onMounted(() => {
               continue;
             }
 
-            if (inHeaders && trimmedLine === "") {
+            if (inHeaders === true && trimmedLine === "") {
               break;
             }
 
-            if (inHeaders && trimmedLine.includes(":")) {
+            if (
+              inHeaders === true &&
+              typeof trimmedLine === "string" &&
+              trimmedLine.includes(":")
+            ) {
               const colonIndex = trimmedLine.indexOf(":");
               const headerName = trimmedLine.substring(0, colonIndex).trim();
               const headerValue = trimmedLine.substring(colonIndex + 1).trim();
               if (
-                headerName &&
-                headerValue &&
+                headerName !== "" &&
+                headerValue !== "" &&
                 headerName.toLowerCase() !== "content-length"
               ) {
                 extractedHeaders[headerName] = headerValue;
@@ -1318,34 +1406,34 @@ onMounted(() => {
       attackResults.value = results;
 
       // Update attack session with current results
-      if (currentActiveAttackId.value) {
+      if (currentActiveAttackId.value !== undefined) {
         updateAttackSession(currentActiveAttackId.value, {
           results: results,
-          status: status.isComplete ? "completed" : "running",
+          status: status.isComplete === true ? "completed" : "running",
         });
       }
 
       // Update isAttacking state based on completion
-      if (status.isComplete) {
+      if (status.isComplete === true) {
         isAttacking.value = false;
         attackProgress.value = 100;
 
         // Calculate findings for the session
         const totalFindings = results.reduce(
-          (sum: number, r: any) => sum + r.findings.length,
+          (sum: number, r: AttackResult) => sum + r.findings.length,
           0,
         );
         const criticalFindings = results.reduce(
-          (sum: number, r: any) =>
+          (sum: number, r: AttackResult) =>
             sum +
             r.findings.filter(
-              (f: any) => f.severity === "critical" || f.severity === "high",
+              (f) => f.severity === "critical" || f.severity === "high",
             ).length,
           0,
         );
 
         // Update session with completion data
-        if (currentActiveAttackId.value) {
+        if (currentActiveAttackId.value !== undefined) {
           updateAttackSession(currentActiveAttackId.value, {
             completedAt: new Date(),
             status: "completed",
@@ -1355,8 +1443,8 @@ onMounted(() => {
           });
         }
 
-        currentActiveAttackId.value = null;
-        currentAttackSessionId.value = null;
+        currentActiveAttackId.value = undefined;
+        currentAttackSessionId.value = undefined;
 
         sdk.window.showToast("Attack completed successfully", {
           variant: "success",
@@ -1375,49 +1463,52 @@ onMounted(() => {
       attackProgress.value = 100;
 
       // Update session with final completion data
-      if (currentActiveAttackId.value) {
+      if (currentActiveAttackId.value !== undefined) {
         updateAttackSession(currentActiveAttackId.value, {
           completedAt: new Date(),
           status: "completed",
-          totalFindings: totalFindings || 0,
-          criticalFindings: criticalFindings || 0,
+          totalFindings: totalFindings ?? 0,
+          criticalFindings: criticalFindings ?? 0,
         });
-        currentActiveAttackId.value = null;
+        currentActiveAttackId.value = undefined;
       }
     }
   };
 
   window.addEventListener(
     "graphql-analyzer-context-attack",
-    handleContextAttack as any,
+    handleContextAttack as EventListener,
   );
   window.addEventListener(
     "graphql-analyzer-attack-progress",
-    handleAttackProgress as any,
+    handleAttackProgress as EventListener,
   );
   window.addEventListener(
     "graphql-analyzer-attack-complete",
-    handleAttackComplete as any,
+    handleAttackComplete as EventListener,
   );
 
   // Store cleanup function for later use
   const eventCleanup = () => {
     window.removeEventListener(
       "graphql-analyzer-context-attack",
-      handleContextAttack as any,
+      handleContextAttack as EventListener,
     );
     window.removeEventListener(
       "graphql-analyzer-attack-progress",
-      handleAttackProgress as any,
+      handleAttackProgress as EventListener,
     );
     window.removeEventListener(
       "graphql-analyzer-attack-complete",
-      handleAttackComplete as any,
+      handleAttackComplete as EventListener,
     );
   };
 
   // Add to global cleanup
-  (window as any).eventCleanup = eventCleanup;
+  type WindowWithCleanup = Window & {
+    eventCleanup?: () => void;
+  };
+  (window as WindowWithCleanup).eventCleanup = eventCleanup;
 });
 
 onUnmounted(() => {
@@ -1425,9 +1516,13 @@ onUnmounted(() => {
   stopAttackPolling();
 
   // Cleanup event listeners
-  if ((window as any).eventCleanup) {
-    (window as any).eventCleanup();
-    delete (window as any).eventCleanup;
+  type WindowWithCleanup = Window & {
+    eventCleanup?: () => void;
+  };
+  const windowWithCleanup = window as WindowWithCleanup;
+  if (windowWithCleanup.eventCleanup !== undefined) {
+    windowWithCleanup.eventCleanup();
+    delete windowWithCleanup.eventCleanup;
   }
 
   // Note: Don't stop background attacks here - they should continue running
@@ -1699,7 +1794,9 @@ export default {
                         >Selected Request</label
                       >
                       <div class="bg-surface-800 rounded p-3 text-sm">
-                        <div><strong>ID:</strong> {{ selectedRequest.id }}</div>
+                        <div v-if="selectedRequest?.id !== undefined">
+                          <strong>ID:</strong> {{ selectedRequest.id }}
+                        </div>
                         <div>
                           <strong>Host:</strong> {{ selectedRequest.host }}:{{
                             selectedRequest.port
@@ -1730,7 +1827,11 @@ export default {
                     <div class="flex items-center justify-between mb-3">
                       <h4 class="text-base font-semibold">Attack Vectors</h4>
                       <Button
-                        v-tooltip="selectedAttacks.length === availableAttacks.length ? 'Deselect all attack vectors' : 'Select all attack vectors'"
+                        v-tooltip="
+                          selectedAttacks.length === availableAttacks.length
+                            ? 'Deselect all attack vectors'
+                            : 'Select all attack vectors'
+                        "
                         :label="
                           selectedAttacks.length === availableAttacks.length
                             ? 'Deselect All'
@@ -1857,12 +1958,16 @@ export default {
                           >Custom Headers</label
                         >
                         <Button
-                          v-tooltip="customHeaders.length >= 10 ? 'Maximum 10 headers allowed' : 'Add custom header'"
+                          v-tooltip="
+                            customHeaders.length >= 10
+                              ? 'Maximum 10 headers allowed'
+                              : 'Add custom header'
+                          "
                           :disabled="customHeaders.length >= 10"
                           icon="fas fa-plus"
                           size="small"
                           text
-                        @click="addCustomHeader"
+                          @click="addCustomHeader"
                         />
                       </div>
 
@@ -1897,7 +2002,7 @@ export default {
                             size="small"
                             text
                             severity="danger"
-                          @click="removeCustomHeader(index)"
+                            @click="removeCustomHeader(index)"
                           />
                         </div>
                       </div>
@@ -1940,7 +2045,7 @@ export default {
                           label="Cancel"
                           icon="fas fa-times"
                           severity="secondary"
-                        outlined
+                          outlined
                           @click="cancelAttack"
                         />
                       </div>
@@ -2098,7 +2203,7 @@ export default {
                             <template #body="{ data }">
                               <div class="flex items-center justify-center">
                                 <span
-v-if="data.rawResult.findings.length > 0" 
+                                  v-if="data.rawResult.findings.length > 0"
                                   class="px-2 py-1 rounded text-xs font-medium"
                                   :class="
                                     getFindingSeverityClass(
@@ -2176,7 +2281,7 @@ v-if="data.rawResult.findings.length > 0"
                                   icon="fas fa-sync"
                                   size="small"
                                   text
-                            @click="sendToReplay(data.rawResult)"
+                                  @click="sendToReplay(data.rawResult)"
                                 />
                               </div>
                             </template>
@@ -2232,7 +2337,7 @@ v-if="data.rawResult.findings.length > 0"
                           <TabView
                             :active-index="activeResultTab"
                             class="h-full"
-                      :pt="{
+                            :pt="{
                               panelContainer: {
                                 class: 'h-full overflow-hidden',
                               },
@@ -2299,13 +2404,17 @@ v-if="data.rawResult.findings.length > 0"
                                         <button
                                           class="text-surface-400 hover:text-surface-200 p-1 rounded"
                                           title="Copy payload"
-                                          @click="copyToClipboard(selectedResult.payload)"
+                                          @click="
+                                            copyToClipboard(
+                                              selectedResult.payload,
+                                            )
+                                          "
                                         >
                                           <i class="fas fa-copy"></i>
                                         </button>
                                         <button
                                           class="text-surface-400 hover:text-surface-200 p-1 rounded"
-                                    title="Expand to full width"
+                                          title="Expand to full width"
                                           @click="payloadExpanded = true"
                                         >
                                           <i
@@ -2348,7 +2457,11 @@ v-if="data.rawResult.findings.length > 0"
                                           v-if="selectedResult.response"
                                           class="text-surface-400 hover:text-surface-200 p-1 rounded"
                                           title="Copy response"
-                                          @click="copyToClipboard(selectedResult.response.body)"
+                                          @click="
+                                            copyToClipboard(
+                                              selectedResult.response.body,
+                                            )
+                                          "
                                         >
                                           <i class="fas fa-copy"></i>
                                         </button>
@@ -2405,9 +2518,7 @@ v-if="data.rawResult.findings.length > 0"
                                             Attack Payload
                                           </div>
                                           <div class="text-xs text-surface-400">
-                                            {{
-                                              selectedResult.attackType
-                                            }}
+                                            {{ selectedResult.attackType }}
                                             attack payload
                                           </div>
                                         </div>
@@ -2415,7 +2526,11 @@ v-if="data.rawResult.findings.length > 0"
                                           <button
                                             class="text-surface-400 hover:text-surface-200 p-1 rounded"
                                             title="Copy payload"
-                                            @click="copyToClipboard(selectedResult.payload)"
+                                            @click="
+                                              copyToClipboard(
+                                                selectedResult.payload,
+                                              )
+                                            "
                                           >
                                             <i class="fas fa-copy"></i>
                                           </button>
@@ -2469,7 +2584,11 @@ v-if="data.rawResult.findings.length > 0"
                                             v-if="selectedResult.response"
                                             class="text-surface-400 hover:text-surface-200 p-1 rounded"
                                             title="Copy response"
-                                            @click="copyToClipboard(selectedResult.response.body)"
+                                            @click="
+                                              copyToClipboard(
+                                                selectedResult.response.body,
+                                              )
+                                            "
                                           >
                                             <i class="fas fa-copy"></i>
                                           </button>

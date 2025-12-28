@@ -2,11 +2,11 @@ import { Classic } from "@caido/primevue";
 import PrimeVue from "primevue/config";
 import { createApp } from "vue";
 
-import GraphQLViewMode from "./views/GraphQLViewMode.vue";
 import { SDKPlugin } from "./plugins/sdk";
 import "./styles/index.css";
 import type { FrontendSDK } from "./types";
 import App from "./views/App.vue";
+import GraphQLViewMode from "./views/GraphQLViewMode.vue";
 
 export const init = (sdk: FrontendSDK) => {
   const app = createApp(App);
@@ -52,7 +52,14 @@ export const init = (sdk: FrontendSDK) => {
 
   // Register the GraphQL request view mode in Replay
   try {
-    (sdk.replay as any).addRequestViewMode?.({
+    type ReplaySDK = {
+      addRequestViewMode?: (config: {
+        label: string;
+        view: { component: unknown };
+      }) => void;
+    };
+    const replaySDK = sdk.replay as ReplaySDK;
+    replaySDK.addRequestViewMode?.({
       label: "GraphQL",
       view: {
         component: GraphQLViewMode,
@@ -81,8 +88,15 @@ export const init = (sdk: FrontendSDK) => {
   // Register context menu commands
   sdk.commands.register("graphql-analyzer-scan", {
     name: "Scan GraphQL Endpoint",
-    run: async (context) => {
-      let requestData: any = null;
+    run: (context) => {
+      type RequestData = {
+        host?: string;
+        port?: number;
+        path?: string;
+        query?: string;
+        getRaw?: () => { toText?: () => string } | undefined;
+      };
+      let requestData: RequestData | undefined = undefined;
 
       if (context.type === "RequestRowContext") {
         if (context.requests.length > 0) {
@@ -92,13 +106,13 @@ export const init = (sdk: FrontendSDK) => {
         requestData = context.request;
       }
 
-      if (!requestData) {
+      if (requestData === undefined) {
         sdk.window.showToast("No request selected", { variant: "warning" });
         return;
       }
 
       // Validate required properties with null checks
-      if (!requestData.host || !requestData.port) {
+      if (requestData.host === undefined || requestData.port === undefined) {
         sdk.window.showToast("Invalid request data", { variant: "error" });
         return;
       }
@@ -110,32 +124,35 @@ export const init = (sdk: FrontendSDK) => {
           ? ""
           : `:${requestData.port}`;
 
-      const path = requestData.path || "/";
-      const query = requestData.query || "";
-      const queryString = query ? `?${query}` : "";
+      const path = requestData.path ?? "/";
+      const query = requestData.query ?? "";
+      const queryString = query !== "" ? `?${query}` : "";
 
       let graphqlUrl = `${protocol}://${requestData.host}${portPart}${path}${queryString}`;
 
       // Only modify URL if it doesn't contain 'graphql' AND has no query parameters
-      if (!graphqlUrl.toLowerCase().includes("graphql") && !queryString) {
+      if (!graphqlUrl.toLowerCase().includes("graphql") && queryString === "") {
         graphqlUrl = `${protocol}://${requestData.host}${portPart}/graphql`;
       }
 
       const headers: Record<string, string> = {};
 
-      if (context.type === "RequestContext" && requestData.getRaw) {
+      if (
+        context.type === "RequestContext" &&
+        requestData.getRaw !== undefined
+      ) {
         try {
           const rawData = requestData.getRaw();
-          const rawString = rawData?.toText?.() || "";
+          const rawString = rawData?.toText?.() ?? "";
 
-          if (rawString) {
+          if (rawString !== "") {
             const lines = rawString.split(/\r?\n/);
             let inHeaders = false;
 
             for (let i = 0; i < lines.length; i++) {
               const line = lines[i];
-              if (!line) {
-                if (inHeaders) break;
+              if (line === undefined || line === "") {
+                if (inHeaders === true) break;
                 continue;
               }
 
@@ -146,17 +163,21 @@ export const init = (sdk: FrontendSDK) => {
                 continue;
               }
 
-              if (inHeaders && trimmedLine === "") break;
+              if (inHeaders === true && trimmedLine === "") break;
 
-              if (inHeaders && trimmedLine.includes(":")) {
+              if (
+                inHeaders === true &&
+                typeof trimmedLine === "string" &&
+                trimmedLine.includes(":")
+              ) {
                 const colonIndex = trimmedLine.indexOf(":");
                 const headerName = trimmedLine.substring(0, colonIndex).trim();
                 const headerValue = trimmedLine
                   .substring(colonIndex + 1)
                   .trim();
                 if (
-                  headerName &&
-                  headerValue &&
+                  headerName !== "" &&
+                  headerValue !== "" &&
                   headerName.toLowerCase() !== "content-length"
                 ) {
                   headers[headerName] = headerValue;
@@ -208,22 +229,34 @@ export const init = (sdk: FrontendSDK) => {
   // Register attack command
   sdk.commands.register("graphql-analyzer-attack", {
     name: "Attack GraphQL Endpoint",
-    run: async (context) => {
-      let selectedRequest: any = null;
+    run: (context) => {
+      type RequestData = {
+        id?: { toString?: () => string };
+        host?: string;
+        port?: number;
+        path?: string;
+        query?: string;
+        headers?: Record<string, string>;
+        getRaw?: () => { toText?: () => string } | undefined;
+      };
+      let selectedRequest: RequestData | undefined = undefined;
 
       if (context.type === "RequestRowContext") {
-        selectedRequest = context.requests[0];
+        selectedRequest = context.requests[0] as RequestData | undefined;
       } else if (context.type === "RequestContext") {
-        selectedRequest = context.request;
+        selectedRequest = context.request as RequestData | undefined;
       }
 
-      if (!selectedRequest) {
+      if (selectedRequest === undefined) {
         sdk.window.showToast("No request selected", { variant: "warning" });
         return;
       }
 
       // Validate required properties
-      if (!selectedRequest.host || !selectedRequest.port) {
+      if (
+        selectedRequest.host === undefined ||
+        selectedRequest.port === undefined
+      ) {
         sdk.window.showToast("Invalid request data", { variant: "error" });
         return;
       }
@@ -237,10 +270,13 @@ export const init = (sdk: FrontendSDK) => {
       );
 
       let rawString = "";
-      if (context.type === "RequestContext" && selectedRequest.getRaw) {
+      if (
+        context.type === "RequestContext" &&
+        selectedRequest.getRaw !== undefined
+      ) {
         try {
           const rawData = selectedRequest.getRaw();
-          rawString = rawData?.toText?.() || "";
+          rawString = rawData?.toText?.() ?? "";
         } catch (error) {
           // Continue without raw data
         }
@@ -248,12 +284,12 @@ export const init = (sdk: FrontendSDK) => {
 
       // Use direct property access for request data with null safety
       const requestData = {
-        id: selectedRequest.id?.toString() || "",
-        host: selectedRequest.host || "",
-        port: selectedRequest.port || 80,
-        path: selectedRequest.path || "/",
-        query: selectedRequest.query || "",
-        headers: selectedRequest.headers || {},
+        id: selectedRequest.id?.toString?.() ?? "",
+        host: selectedRequest.host ?? "",
+        port: selectedRequest.port ?? 80,
+        path: selectedRequest.path ?? "/",
+        query: selectedRequest.query ?? "",
+        headers: selectedRequest.headers ?? {},
         raw: rawString,
       };
 

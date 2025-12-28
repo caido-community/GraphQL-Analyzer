@@ -40,9 +40,9 @@ const getLanguageExtension = () => {
 };
 
 const createEditor = () => {
-  if (!editorRef.value) return;
+  if (editorRef.value === undefined) return;
 
-  if (editorView.value) {
+  if (editorView.value !== undefined) {
     editorView.value.destroy();
   }
 
@@ -56,7 +56,7 @@ const createEditor = () => {
     // keymap.of(searchKeymap), // Add search functionality (Ctrl+F)
     EditorView.theme({
       "&": {
-        fontSize: `${props.fontSize || 14}px`,
+        fontSize: `${props.fontSize ?? 14}px`,
         height: "100%",
         fontFamily:
           "'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, Courier, monospace",
@@ -162,7 +162,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (editorView.value) {
+  if (editorView.value !== undefined) {
     editorView.value.destroy();
   }
 });

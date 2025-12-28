@@ -38,32 +38,47 @@ const {
   clearCode,
 } = useCodeFormatter(selectedSession);
 
-const selectedNode = ref<any>(null);
+type TreeNode = {
+  key: string;
+  label: string;
+  icon?: string;
+  data?: {
+    type: string;
+    content: unknown;
+  };
+  children?: TreeNode[];
+};
+
+const selectedNode = ref<TreeNode | undefined>(undefined);
 const expandedKeys = ref<Record<string, boolean>>({});
 
-const onNodeSelect = async (node: any) => {
+const onNodeSelect = async (node: TreeNode) => {
   selectedNode.value = node;
   await handleNodeSelect(node);
 };
 
-const onNodeExpand = (node: any) => {
-  expandedKeys.value[node.key] = true;
+const onNodeExpand = (node: TreeNode) => {
+  if (node.key !== undefined) {
+    expandedKeys.value[node.key] = true;
+  }
 };
 
-const onNodeCollapse = (node: any) => {
-  expandedKeys.value[node.key] = false;
+const onNodeCollapse = (node: TreeNode) => {
+  if (node.key !== undefined) {
+    expandedKeys.value[node.key] = false;
+  }
 };
 
 const handleSelectSession = async (sessionId: string) => {
   clearCode();
-  selectedNode.value = null;
+  selectedNode.value = undefined;
   expandedKeys.value = {};
   await selectSession(sessionId);
 };
 
 const handleClearAll = async () => {
   clearCode();
-  selectedNode.value = null;
+  selectedNode.value = undefined;
   expandedKeys.value = {};
   await clearAllData();
 };
@@ -78,6 +93,10 @@ const handleSendToAttacker = () => {
   if (props.navigateTo) {
     props.navigateTo("Attacks");
   }
+};
+
+const handleRenameSession = (sessionId: string, newName: string) => {
+  renameSession(sessionId, newName);
 };
 
 onMounted(() => {
@@ -106,7 +125,7 @@ onMounted(() => {
             :label="session.title"
             :status="session.status"
             @select="handleSelectSession(session.id)"
-            @rename="(newName: string) => renameSession(session.id, newName)"
+            @rename="(newName) => handleRenameSession(session.id, newName)"
             @delete="deleteSession(session.id)"
           />
         </div>
@@ -127,8 +146,9 @@ onMounted(() => {
               <SplitterPanel :size="40" :min-size="20">
                 <TreePanel
                   :tree-data="
-                    selectedSession.supportsIntrospection &&
-                    selectedSession.schema
+                    selectedSession !== undefined &&
+                    selectedSession.supportsIntrospection === true &&
+                    selectedSession.schema !== undefined
                       ? getTreeData()
                       : []
                   "

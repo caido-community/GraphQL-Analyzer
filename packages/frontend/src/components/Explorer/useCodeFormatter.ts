@@ -1,3 +1,4 @@
+import type { GraphQLField, GraphQLType, PointOfInterest } from "shared";
 import { ref } from "vue";
 
 import type { ExplorerSession } from "./useSessions";
@@ -13,12 +14,14 @@ export const useCodeFormatter = (selectedSession: {
   const selectedLanguage = ref<"json" | "javascript" | "graphql">("json");
 
   const formatGraphQLField = async (
-    field: any,
+    field: GraphQLField & { rawIntrospectionData?: unknown },
     type: "query" | "mutation" | "subscription",
   ): Promise<string> => {
-    const schema = selectedSession.value?.schema as any;
-    if (!schema?.allTypes) {
-      const dataToShow = field.rawIntrospectionData || field;
+    const schema = selectedSession.value?.schema;
+    if (schema?.allTypes === undefined) {
+      const dataToShow =
+        (field as { rawIntrospectionData?: unknown }).rawIntrospectionData ??
+        field;
       return JSON.stringify(dataToShow, null, 2);
     }
 
@@ -31,34 +34,44 @@ export const useCodeFormatter = (selectedSession: {
       );
       return generatedQuery;
     } catch (error) {
-      const dataToShow = field.rawIntrospectionData || field;
+      const dataToShow =
+        (field as { rawIntrospectionData?: unknown }).rawIntrospectionData ??
+        field;
       return JSON.stringify(dataToShow, null, 2);
     }
   };
 
-  const formatObjectType = (type: any): string => {
-    const dataToShow = type.rawIntrospectionData || type;
+  const formatObjectType = (
+    type: GraphQLType & { rawIntrospectionData?: unknown },
+  ): string => {
+    const dataToShow = type.rawIntrospectionData ?? type;
     return JSON.stringify(dataToShow, null, 2);
   };
 
-  const formatEnum = (enumType: any): string => {
-    const dataToShow = enumType.rawIntrospectionData || enumType;
+  const formatEnum = (enumType: {
+    name: string;
+    rawIntrospectionData?: unknown;
+  }): string => {
+    const dataToShow = enumType.rawIntrospectionData ?? enumType;
     return JSON.stringify(dataToShow, null, 2);
   };
 
-  const formatPointOfInterest = (poi: any): string => {
+  const formatPointOfInterest = (poi: PointOfInterest): string => {
     return JSON.stringify(poi, null, 2);
   };
 
-  const generateRequestTemplate = (content: any): string => {
-    const url = content.url || "";
+  const generateRequestTemplate = (content: {
+    url?: string;
+    schema?: unknown;
+  }): string => {
+    const url = content.url ?? "";
     let hostname = "";
     let path = "/graphql";
 
     try {
       const urlObj = new URL(url);
       hostname = urlObj.hostname;
-      path = urlObj.pathname || "/graphql";
+      path = urlObj.pathname !== "" ? urlObj.pathname : "/graphql";
     } catch {
       hostname = "example.com";
     }
@@ -78,54 +91,91 @@ Content-Type: application/json
 }`;
   };
 
-  const handleNodeSelect = async (node: any) => {
-    if (node.data) {
+  type TreeNodeData = {
+    type: string;
+    content: unknown;
+  };
+
+  const handleNodeSelect = async (node: { data?: TreeNodeData }) => {
+    if (node.data !== undefined) {
       selectedType.value = node.data.type;
 
       switch (node.data.type) {
-        case "query":
+        case "query": {
           selectedCode.value = await formatGraphQLField(
-            node.data.content,
+            node.data.content as GraphQLField & {
+              rawIntrospectionData?: unknown;
+            },
             "query",
           );
           selectedLanguage.value = "graphql";
           break;
-        case "mutation":
+        }
+        case "mutation": {
           selectedCode.value = await formatGraphQLField(
-            node.data.content,
+            node.data.content as GraphQLField & {
+              rawIntrospectionData?: unknown;
+            },
             "mutation",
           );
           selectedLanguage.value = "graphql";
           break;
-        case "subscription":
+        }
+        case "subscription": {
           selectedCode.value = await formatGraphQLField(
-            node.data.content,
+            node.data.content as GraphQLField & {
+              rawIntrospectionData?: unknown;
+            },
             "subscription",
           );
           selectedLanguage.value = "graphql";
           break;
-        case "object-type":
-          selectedCode.value = formatObjectType(node.data.content);
+        }
+        case "object-type": {
+          selectedCode.value = formatObjectType(
+            node.data.content as GraphQLType & {
+              rawIntrospectionData?: unknown;
+            },
+          );
           selectedLanguage.value = "json";
           break;
-        case "enum":
-          selectedCode.value = formatEnum(node.data.content);
+        }
+        case "enum": {
+          selectedCode.value = formatEnum(
+            node.data.content as {
+              name: string;
+              rawIntrospectionData?: unknown;
+            },
+          );
           selectedLanguage.value = "json";
           break;
-        case "point-of-interest":
-          selectedCode.value = formatPointOfInterest(node.data.content);
+        }
+        case "point-of-interest": {
+          selectedCode.value = formatPointOfInterest(
+            node.data.content as PointOfInterest,
+          );
           selectedLanguage.value = "json";
           break;
-        case "json-schema":
+        }
+        case "json-schema": {
+          const content = node.data.content;
           const rawData =
-            node.data.content.rawIntrospection || node.data.content;
+            typeof content === "object" &&
+            content !== null &&
+            "rawIntrospection" in content
+              ? content.rawIntrospection
+              : content;
           selectedCode.value = JSON.stringify(rawData, null, 2);
           selectedLanguage.value = "json";
           break;
-        case "request-template":
-          selectedCode.value = generateRequestTemplate(node.data.content);
+        }
+        case "request-template": {
+          selectedCode.value = generateRequestTemplate(
+            node.data.content as { url?: string; schema?: unknown },
+          );
           selectedLanguage.value = "graphql";
           break;
+        }
       }
     }
   };

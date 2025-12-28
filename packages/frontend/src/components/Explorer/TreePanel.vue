@@ -1,27 +1,38 @@
 <script setup lang="ts">
 import Tree from "primevue/tree";
 
+type TreeNode = {
+  key: string;
+  label: string;
+  icon?: string;
+  data?: {
+    type: string;
+    content: unknown;
+  };
+  children?: TreeNode[];
+};
+
 defineProps<{
-  treeData: any[];
-  selectedNode: any;
+  treeData: TreeNode[];
+  selectedNode: TreeNode | undefined;
   expandedKeys: Record<string, boolean>;
 }>();
 
 const emit = defineEmits<{
-  nodeSelect: [node: any];
-  nodeExpand: [node: any];
-  nodeCollapse: [node: any];
+  nodeSelect: [node: TreeNode];
+  nodeExpand: [node: TreeNode];
+  nodeCollapse: [node: TreeNode];
 }>();
 
-const onNodeSelect = (node: any) => {
+const onNodeSelect = (node: TreeNode) => {
   emit("nodeSelect", node);
 };
 
-const onNodeExpand = (node: any) => {
+const onNodeExpand = (node: TreeNode) => {
   emit("nodeExpand", node);
 };
 
-const onNodeCollapse = (node: any) => {
+const onNodeCollapse = (node: TreeNode) => {
   emit("nodeCollapse", node);
 };
 </script>
@@ -32,7 +43,11 @@ const onNodeCollapse = (node: any) => {
       v-if="treeData && treeData.length > 0"
       :value="treeData"
       selection-mode="single"
-      :selection-keys="selectedNode ? { [selectedNode.key]: true } : {}"
+      :selection-keys="
+        selectedNode !== undefined && selectedNode.key !== undefined
+          ? { [selectedNode.key]: true }
+          : {}
+      "
       :expanded-keys="expandedKeys"
       class="w-full"
       @node-select="onNodeSelect"

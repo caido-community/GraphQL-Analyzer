@@ -35,7 +35,7 @@ const handlePageChange = (page: PageType) => {
 
 const handleNavigationEvent = (event: CustomEvent) => {
   const targetPage = event.detail?.page;
-  if (targetPage) {
+  if (targetPage !== undefined && targetPage !== null) {
     currentPage.value = targetPage as PageType;
   }
 };
@@ -47,9 +47,11 @@ const checkPendingNavigation = () => {
     "graphql-analyzer-navigate-timestamp",
   );
 
-  if (pendingNav && navTimestamp) {
+  if (pendingNav !== null && navTimestamp !== null) {
     const now = Date.now();
-    const shouldNavigate = now - parseInt(navTimestamp) < 2000;
+    const parsedTimestamp = parseInt(navTimestamp);
+    const shouldNavigate =
+      !Number.isNaN(parsedTimestamp) && now - parsedTimestamp < 2000;
 
     if (shouldNavigate) {
       currentPage.value = pendingNav as PageType;
@@ -65,7 +67,7 @@ onMounted(() => {
 
   window.addEventListener(
     "graphql-analyzer-navigate",
-    handleNavigationEvent as any,
+    handleNavigationEvent as EventListener,
   );
   window.addEventListener("focus", checkPendingNavigation);
 });
@@ -73,7 +75,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener(
     "graphql-analyzer-navigate",
-    handleNavigationEvent as any,
+    handleNavigationEvent as EventListener,
   );
   window.removeEventListener("focus", checkPendingNavigation);
 });

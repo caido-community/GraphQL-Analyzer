@@ -2,8 +2,19 @@
 import Button from "primevue/button";
 import Card from "primevue/card";
 
+type DashboardActivity = {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  createdAt: Date;
+  status: string;
+  type: string;
+  attackSessionId?: string;
+};
+
 defineProps<{
-  recentSessions: any[];
+  recentSessions: DashboardActivity[];
 }>();
 
 const emit = defineEmits(["select-session", "delete-all-data"]);

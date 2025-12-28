@@ -3,9 +3,48 @@ import * as d3 from "d3";
 import Button from "primevue/button";
 import Card from "primevue/card";
 import InputText from "primevue/inputtext";
+import type { GraphQLField, GraphQLSchema, GraphQLType } from "shared";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
+
+type ExplorerSession = {
+  id: string;
+  title: string;
+  url: string;
+  schema?: GraphQLSchema;
+  supportsIntrospection: boolean;
+  createdAt: Date;
+  status: string;
+};
+
+type D3Node = {
+  id: number;
+  name: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  fields?: Array<{ name: string; type: string }>;
+};
+
+type D3Link = {
+  source: D3Node | number;
+  target: D3Node | number | undefined;
+  type: string;
+  fieldName?: string;
+};
+
+type NavItem = {
+  name: string;
+  type: string;
+  parent?: string;
+  children?: NavItem[];
+  fullSignature?: string;
+  fieldData?: unknown;
+};
 
 const sdk = useSDK();
 
@@ -29,35 +68,44 @@ const LAYOUT = {
   PADDING: 20,
 };
 
-const sessions = ref<any[]>([]);
-const selectedSessionId = ref<string | null>(null);
-const voyagerContainer = ref<HTMLDivElement>();
-const minimapSvg = ref<SVGSVGElement>();
+const sessions = ref<ExplorerSession[]>([]);
+const selectedSessionId = ref<string | undefined>(undefined);
+const voyagerContainer = ref<HTMLDivElement | undefined>(undefined);
+const minimapSvg = ref<SVGSVGElement | undefined>(undefined);
 
-const highlightedNodeId = ref<number | null>(null);
-const cachedD3Data = ref<{ nodes: any[]; links: any[] } | null>(null);
-const searchDebounceTimer = ref<number | null>(null);
-const currentZoom = ref<any>(null);
-const currentTransform = ref<any>(d3.zoomIdentity);
+const highlightedNodeId = ref<number | undefined>(undefined);
+const cachedD3Data = ref<{ nodes: D3Node[]; links: D3Link[] } | undefined>(
+  undefined,
+);
+const searchDebounceTimer = ref<number | undefined>(undefined);
+const currentZoom = ref<d3.ZoomBehavior<SVGSVGElement, unknown> | undefined>(
+  undefined,
+);
+const currentTransform = ref<d3.ZoomTransform>(d3.zoomIdentity);
 
 const selectedSession = computed(() =>
-  sessions.value.find((s: any) => s.id === selectedSessionId.value),
+  sessions.value.find((s: ExplorerSession) => s.id === selectedSessionId.value),
 );
 
 const introspectionSessions = computed(() =>
-  sessions.value.filter((s: any) => s.supportsIntrospection),
+  sessions.value.filter(
+    (s: ExplorerSession) => s.supportsIntrospection === true,
+  ),
 );
 
 const minimapViewBox = computed(() => {
-  if (!cachedD3Data.value || cachedD3Data.value.nodes.length === 0) {
+  if (
+    cachedD3Data.value === undefined ||
+    cachedD3Data.value.nodes.length === 0
+  ) {
     return { x: 0, y: 0, width: 1000, height: 1000 };
   }
 
   const nodes = cachedD3Data.value.nodes;
-  const minX = Math.min(...nodes.map((n: any) => n.x)) - 50;
-  const maxX = Math.max(...nodes.map((n: any) => n.x + n.width)) + 50;
-  const minY = Math.min(...nodes.map((n: any) => n.y)) - 50;
-  const maxY = Math.max(...nodes.map((n: any) => n.y + n.height)) + 50;
+  const minX = Math.min(...nodes.map((n: D3Node) => n.x)) - 50;
+  const maxX = Math.max(...nodes.map((n: D3Node) => n.x + n.width)) + 50;
+  const minY = Math.min(...nodes.map((n: D3Node) => n.y)) - 50;
+  const maxY = Math.max(...nodes.map((n: D3Node) => n.y + n.height)) + 50;
 
   return {
     x: minX,
@@ -69,11 +117,11 @@ const minimapViewBox = computed(() => {
 
 const searchTerm = ref("");
 const debouncedSearchTerm = ref("");
-const currentSchema = ref<any>(null);
+const currentSchema = ref<GraphQLSchema | undefined>(undefined);
 const isNavExpanded = ref(true);
 
 watch(searchTerm, (newValue: string) => {
-  if (searchDebounceTimer.value) {
+  if (searchDebounceTimer.value !== undefined) {
     clearTimeout(searchDebounceTimer.value);
   }
   searchDebounceTimer.value = window.setTimeout(() => {
@@ -82,7 +130,7 @@ watch(searchTerm, (newValue: string) => {
 });
 
 watch(debouncedSearchTerm, () => {
-  if (selectedSession.value && cachedD3Data.value) {
+  if (selectedSession.value !== undefined && cachedD3Data.value !== undefined) {
     loadVoyagerVisualization();
   }
 });
@@ -95,16 +143,16 @@ const expandedSections = ref<Record<string, boolean>>({
 });
 
 const filteredItems = computed(() => {
-  if (!currentSchema.value) return [];
+  if (currentSchema.value === undefined) return [];
 
-  const items: any[] = [];
+  const items: NavItem[] = [];
 
   // Add root operations
-  if (currentSchema.value.queries) {
+  if (currentSchema.value.queries.length > 0) {
     items.push({
       name: "Query",
       type: "root",
-      children: currentSchema.value.queries.map((q: any) => ({
+      children: currentSchema.value.queries.map((q: GraphQLField) => ({
         name: q.name,
         type: "query",
         parent: "Query",
@@ -112,11 +160,11 @@ const filteredItems = computed(() => {
     });
   }
 
-  if (currentSchema.value.mutations) {
+  if (currentSchema.value.mutations.length > 0) {
     items.push({
       name: "Mutation",
       type: "root",
-      children: currentSchema.value.mutations.map((m: any) => ({
+      children: currentSchema.value.mutations.map((m: GraphQLField) => ({
         name: m.name,
         type: "mutation",
         parent: "Mutation",
@@ -124,11 +172,11 @@ const filteredItems = computed(() => {
     });
   }
 
-  if (currentSchema.value.subscriptions) {
+  if (currentSchema.value.subscriptions.length > 0) {
     items.push({
       name: "Subscription",
       type: "root",
-      children: currentSchema.value.subscriptions.map((s: any) => ({
+      children: currentSchema.value.subscriptions.map((s: GraphQLField) => ({
         name: s.name,
         type: "subscription",
         parent: "Subscription",
@@ -137,12 +185,12 @@ const filteredItems = computed(() => {
   }
 
   // Add types
-  if (currentSchema.value.types) {
-    currentSchema.value.types.forEach((type: any) => {
+  if (currentSchema.value.types.length > 0) {
+    currentSchema.value.types.forEach((type: GraphQLType) => {
       items.push({
         name: type.name,
         type: "type",
-        children: (type.fields || []).map((f: any) => ({
+        children: (type.fields ?? []).map((f: GraphQLField) => ({
           name: f.name,
           fullSignature: formatFieldSignature(f), // Full signature for display
           fieldData: f, // Keep full field data
@@ -154,66 +202,81 @@ const filteredItems = computed(() => {
   }
 
   // Add enums
-  if (currentSchema.value.enums) {
-    currentSchema.value.enums.forEach((enumType: any) => {
-      items.push({
-        name: enumType.name,
-        type: "enum",
-        children: (enumType.values || []).map((v: any) => ({
-          name: v.name,
-          fullSignature: v.name, // Enum values don't have complex signatures
-          fieldData: v, // Keep full field data
-          type: "enumValue",
-          parent: enumType.name,
-        })),
-      });
-    });
+  if (currentSchema.value.enums.length > 0) {
+    currentSchema.value.enums.forEach(
+      (enumType: { name: string; values: Array<{ name: string }> }) => {
+        items.push({
+          name: enumType.name,
+          type: "enum",
+          children: (enumType.values ?? []).map((v: { name: string }) => ({
+            name: v.name,
+            fullSignature: v.name, // Enum values don't have complex signatures
+            fieldData: v, // Keep full field data
+            type: "enumValue",
+            parent: enumType.name,
+          })),
+        });
+      },
+    );
   }
 
-  if (!debouncedSearchTerm.value.trim()) return items;
+  if (debouncedSearchTerm.value.trim() === "") return items;
 
   const search = debouncedSearchTerm.value.toLowerCase();
   return items.filter(
     (item) =>
       item.name.toLowerCase().includes(search) ||
-      item.children?.some((child: any) =>
+      item.children?.some((child: NavItem) =>
         child.name.toLowerCase().includes(search),
-      ),
+      ) === true,
   );
 });
 
 const zoomIn = () => {
-  if (!voyagerContainer.value || !currentZoom.value) return;
+  if (voyagerContainer.value === undefined || currentZoom.value === undefined)
+    return;
   const svg = d3.select(voyagerContainer.value).select("svg");
-  svg.transition().duration(300).call(currentZoom.value.scaleBy, 1.3);
+  svg
+    .transition()
+    .duration(300)
+    // @ts-expect-error - D3.js transition type compatibility
+    .call(currentZoom.value.scaleBy, 1.3);
 };
 
 const zoomOut = () => {
-  if (!voyagerContainer.value || !currentZoom.value) return;
+  if (voyagerContainer.value === undefined || currentZoom.value === undefined)
+    return;
   const svg = d3.select(voyagerContainer.value).select("svg");
+  // @ts-expect-error - D3.js transition type compatibility
   svg.transition().duration(300).call(currentZoom.value.scaleBy, 0.7);
 };
 
 const resetZoom = () => {
-  if (!voyagerContainer.value || !currentZoom.value) return;
+  if (voyagerContainer.value === undefined || currentZoom.value === undefined)
+    return;
   const svg = d3.select(voyagerContainer.value).select("svg");
   svg
     .transition()
     .duration(500)
+    // @ts-expect-error - D3.js transition type compatibility
     .call(currentZoom.value.transform, d3.zoomIdentity);
 };
 
 const fitToView = () => {
-  if (!voyagerContainer.value || !cachedD3Data.value || !currentZoom.value)
+  if (
+    voyagerContainer.value === undefined ||
+    cachedD3Data.value === undefined ||
+    currentZoom.value === undefined
+  )
     return;
 
   const { nodes } = cachedD3Data.value;
   if (nodes.length === 0) return;
 
-  const minX = Math.min(...nodes.map((n: any) => n.x));
-  const maxX = Math.max(...nodes.map((n: any) => n.x + n.width));
-  const minY = Math.min(...nodes.map((n: any) => n.y));
-  const maxY = Math.max(...nodes.map((n: any) => n.y + n.height));
+  const minX = Math.min(...nodes.map((n: D3Node) => n.x));
+  const maxX = Math.max(...nodes.map((n: D3Node) => n.x + n.width));
+  const minY = Math.min(...nodes.map((n: D3Node) => n.y));
+  const maxY = Math.max(...nodes.map((n: D3Node) => n.y + n.height));
 
   const contentWidth = maxX - minX;
   const contentHeight = maxY - minY;
@@ -234,23 +297,22 @@ const fitToView = () => {
   const translateY = centerY - contentCenterY * scale;
 
   const svg = d3.select(voyagerContainer.value).select("svg");
-  svg
-    .transition()
-    .duration(750)
-    .call(
-      currentZoom.value.transform,
-      d3.zoomIdentity.translate(translateX, translateY).scale(scale),
-    );
+  svg.transition().duration(750).call(
+    // @ts-expect-error - D3.js transition type compatibility
+    currentZoom.value.transform,
+    d3.zoomIdentity.translate(translateX, translateY).scale(scale),
+  );
 };
 
-const focusOnNode = (nodeData: any) => {
-  if (!voyagerContainer.value || !currentZoom.value) return;
+const focusOnNode = (nodeData: D3Node) => {
+  if (voyagerContainer.value === undefined || currentZoom.value === undefined)
+    return;
 
   const svg = d3.select(voyagerContainer.value).select("svg");
   const g = svg.select("g");
 
   const containerRect = voyagerContainer.value.getBoundingClientRect();
-  if (!containerRect) return;
+  if (containerRect.width === 0 && containerRect.height === 0) return;
 
   const scale = 1.2;
   const centerX = containerRect.width / 2;
@@ -261,16 +323,14 @@ const focusOnNode = (nodeData: any) => {
   const translateX = centerX - nodeX * scale;
   const translateY = centerY - nodeY * scale;
 
-  svg
-    .transition()
-    .duration(750)
-    .call(
-      currentZoom.value.transform,
-      d3.zoomIdentity.translate(translateX, translateY).scale(scale),
-    );
+  svg.transition().duration(750).call(
+    // @ts-expect-error - D3.js transition type compatibility
+    currentZoom.value.transform,
+    d3.zoomIdentity.translate(translateX, translateY).scale(scale),
+  );
 
-  g.selectAll(".node")
-    .filter((d: any) => d.id === nodeData.id)
+  g.selectAll<SVGGElement, D3Node>(".node")
+    .filter((d: D3Node) => d.id === nodeData.id)
     .select("rect")
     .transition()
     .duration(300)
@@ -280,14 +340,16 @@ const focusOnNode = (nodeData: any) => {
     .delay(1000)
     .duration(300)
     .attr("stroke-width", 2)
-    .attr("stroke", (d: any) => d.color);
+    .attr("stroke", (d: D3Node) => d.color);
 };
 
 const toggleSection = (sectionName: string) => {
-  expandedSections.value[sectionName] = !expandedSections.value[sectionName];
+  const currentValue = expandedSections.value[sectionName];
+  expandedSections.value[sectionName] =
+    currentValue === undefined ? true : !currentValue;
 };
 
-const shouldShowChildren = (item: any): boolean => {
+const shouldShowChildren = (item: NavItem): boolean => {
   // For root sections (Query, Mutation, Subscription), check expanded state
   if (
     item.type === "root" &&
@@ -302,27 +364,33 @@ const shouldShowChildren = (item: any): boolean => {
 
 const findParentChain = (
   nodeId: number,
-  nodes: any[],
-  links: any[],
+  nodes: D3Node[],
+  links: D3Link[],
 ): number[] => {
   const chain = [nodeId];
-  const incomingLinks = links.filter((link: any) => link.target.id === nodeId);
+  const incomingLinks = links.filter((link: D3Link) => {
+    const target =
+      typeof link.target === "object" ? link.target.id : link.target;
+    return target === nodeId;
+  });
 
   for (const link of incomingLinks) {
-    const parentChain = findParentChain(link.source.id, nodes, links);
+    const source =
+      typeof link.source === "object" ? link.source.id : link.source;
+    const parentChain = findParentChain(source, nodes, links);
     chain.push(...parentChain);
   }
 
   return [...new Set(chain)];
 };
 
-const toggleNodeHighlight = (nodeData: any) => {
-  if (!cachedD3Data.value) return;
+const toggleNodeHighlight = (nodeData: D3Node) => {
+  if (cachedD3Data.value === undefined) return;
 
   const { nodes, links } = cachedD3Data.value;
 
   if (highlightedNodeId.value === nodeData.id) {
-    highlightedNodeId.value = null;
+    highlightedNodeId.value = undefined;
     updateNodeStyles(nodes, []);
   } else {
     highlightedNodeId.value = nodeData.id;
@@ -332,12 +400,12 @@ const toggleNodeHighlight = (nodeData: any) => {
 };
 
 // Update node styles based on highlighting
-const updateNodeStyles = (nodes: any[], highlightedIds: number[]) => {
-  if (!voyagerContainer.value) return;
+const updateNodeStyles = (nodes: D3Node[], highlightedIds: number[]) => {
+  if (voyagerContainer.value === undefined) return;
 
   const svg = d3.select(voyagerContainer.value).select("svg");
 
-  svg.selectAll(".node").each(function (d: any) {
+  svg.selectAll<SVGGElement, D3Node>(".node").each(function (d: D3Node) {
     const nodeGroup = d3.select(this as SVGElement);
     const isHighlighted = highlightedIds.includes(d.id);
 
@@ -352,11 +420,19 @@ const updateNodeStyles = (nodes: any[], highlightedIds: number[]) => {
   });
 
   // Update link styles - keep highlighted connections clear
-  svg.selectAll(".link").each(function (d: any) {
+  svg.selectAll<SVGLineElement, D3Link>(".link").each(function (d: D3Link) {
     const link = d3.select(this as SVGElement);
+    const sourceId = typeof d.source === "object" ? d.source.id : d.source;
+    const targetId =
+      typeof d.target === "object" && d.target !== undefined
+        ? d.target.id
+        : typeof d.target === "number"
+          ? d.target
+          : undefined;
     const isLinkHighlighted =
-      highlightedIds.includes(d.source.id) &&
-      highlightedIds.includes(d.target.id);
+      targetId !== undefined &&
+      highlightedIds.includes(sourceId) &&
+      highlightedIds.includes(targetId);
     link.style(
       "opacity",
       highlightedIds.length === 0 ? 0.9 : isLinkHighlighted ? 0.9 : 0.2,
@@ -364,7 +440,7 @@ const updateNodeStyles = (nodes: any[], highlightedIds: number[]) => {
   });
 };
 
-const onNavItemClick = (item: any) => {
+const onNavItemClick = (item: NavItem) => {
   if (
     item.type === "root" &&
     ["Query", "Mutation", "Subscription"].includes(item.name)
@@ -373,27 +449,32 @@ const onNavItemClick = (item: any) => {
     return;
   }
 
-  if (!cachedD3Data.value) return;
+  if (cachedD3Data.value === undefined) return;
 
   const { nodes } = cachedD3Data.value;
   const targetNode = nodes.find(
     (n) => n.name === item.name || n.name === item.parent,
   );
 
-  if (targetNode) {
+  if (targetNode !== undefined) {
     focusOnNode(targetNode);
   }
 };
 
 const loadSessions = async () => {
   try {
-    const stored = sdk.storage.get() as {
-      explorerSessions?: any[];
-      selectedExplorerSessionId?: string;
-    } | null;
+    const stored = sdk.storage.get() as
+      | {
+          explorerSessions?: ExplorerSession[];
+          selectedExplorerSessionId?: string;
+        }
+      | undefined;
 
-    if (stored?.explorerSessions && Array.isArray(stored.explorerSessions)) {
-      sessions.value = stored.explorerSessions.map((s: any) => ({
+    if (
+      stored?.explorerSessions !== undefined &&
+      Array.isArray(stored.explorerSessions)
+    ) {
+      sessions.value = stored.explorerSessions.map((s: ExplorerSession) => ({
         ...s,
         createdAt: new Date(s.createdAt),
       }));
@@ -402,25 +483,25 @@ const loadSessions = async () => {
       const autoSelectSessionId = localStorage.getItem(
         "voyager-auto-select-session",
       );
-      if (autoSelectSessionId) {
+      if (autoSelectSessionId !== null) {
         const sessionToSelect = sessions.value.find(
-          (s: any) => s.id === autoSelectSessionId,
+          (s: ExplorerSession) => s.id === autoSelectSessionId,
         );
-        if (sessionToSelect) {
+        if (sessionToSelect !== undefined) {
           await selectSession(autoSelectSessionId);
         }
         // Clear the flag after use
         localStorage.removeItem("voyager-auto-select-session");
-        return; // Skip setting to null
+        return; // Skip setting to undefined
       }
     } else {
       sessions.value = [];
     }
 
-    selectedSessionId.value = null;
+    selectedSessionId.value = undefined;
   } catch (error) {
     sessions.value = [];
-    selectedSessionId.value = null;
+    selectedSessionId.value = undefined;
   }
 };
 
@@ -429,54 +510,57 @@ const selectSession = async (sessionId: string) => {
 
   sdk.window.showToast("Loading the graph for you...", { variant: "info" });
 
-  const session = sessions.value.find((s: any) => s.id === sessionId);
-  if (session?.schema) {
+  const session = sessions.value.find(
+    (s: ExplorerSession) => s.id === sessionId,
+  );
+  if (session?.schema !== undefined) {
     currentSchema.value = session.schema;
     cachedD3Data.value = parseSchemaToD3(session.schema);
   }
 
-  highlightedNodeId.value = null;
+  highlightedNodeId.value = undefined;
 
   await nextTick();
-  await loadVoyagerVisualization();
+  loadVoyagerVisualization();
 };
 
 // Format full field signature with arguments
-const formatFieldSignature = (field: any): string => {
+const formatFieldSignature = (field: GraphQLField): string => {
   let signature = field.name;
 
   // Add arguments if they exist
-  if (field.args && field.args.length > 0) {
+  if (field.args.length > 0) {
     const argsStr = field.args
-      .map((arg: any) => `${arg.name}: ${arg.type}`)
+      .map((arg: { name: string; type: string }) => `${arg.name}: ${arg.type}`)
       .join(", ");
     signature += `(${argsStr})`;
   }
 
   // Add return type
-  if (field.type) {
+  if (field.type !== undefined) {
     signature += `: ${field.type}`;
   }
 
   return signature;
 };
 
-const parseSchemaToD3 = (schema: any) => {
-  const nodes: any[] = [];
-  const links: any[] = [];
+const parseSchemaToD3 = (schema: GraphQLSchema) => {
+  const nodes: D3Node[] = [];
+  const links: D3Link[] = [];
   const nodeMap = new Map();
   let nodeId = 0;
 
   const calculateBoxDimensions = (
-    fields: any[],
+    fields: GraphQLField[],
     title: string,
   ): { width: number; height: number } => {
     const titleWidth = title.length * 12 + 40;
     let maxFieldWidth = titleWidth;
 
-    if (fields && fields.length > 0) {
-      fields.forEach((field: any) => {
-        const fieldText = field.name + (field.type ? `: ${field.type}` : "");
+    if (fields.length > 0) {
+      fields.forEach((field: GraphQLField) => {
+        const fieldText =
+          field.name + (field.type !== undefined ? `: ${field.type}` : "");
         const fieldWidth = fieldText.length * 8 + 40;
         maxFieldWidth = Math.max(maxFieldWidth, fieldWidth);
       });
@@ -497,9 +581,9 @@ const parseSchemaToD3 = (schema: any) => {
   };
 
   let rootY = 50;
-  let queryNode = null;
+  let queryNode: D3Node | undefined = undefined;
 
-  if (schema.queries?.length > 0) {
+  if (schema.queries.length > 0) {
     const id = nodeId++;
     const dimensions = calculateBoxDimensions(schema.queries, "Query");
     queryNode = {
@@ -518,7 +602,7 @@ const parseSchemaToD3 = (schema: any) => {
     rootY += dimensions.height + LAYOUT.ROOT_SPACING;
   }
 
-  if (schema.mutations?.length > 0) {
+  if (schema.mutations.length > 0) {
     const id = nodeId++;
     const dimensions = calculateBoxDimensions(schema.mutations, "Mutation");
     const node = {
@@ -537,7 +621,7 @@ const parseSchemaToD3 = (schema: any) => {
     rootY += dimensions.height + LAYOUT.ROOT_SPACING;
   }
 
-  if (schema.subscriptions?.length > 0) {
+  if (schema.subscriptions.length > 0) {
     const id = nodeId++;
     const dimensions = calculateBoxDimensions(
       schema.subscriptions,
@@ -558,16 +642,17 @@ const parseSchemaToD3 = (schema: any) => {
     nodeMap.set("Subscription", node);
   }
 
-  if (schema.types?.length > 0) {
-    let currentX = queryNode
-      ? queryNode.x + queryNode.width + LAYOUT.COLUMN_SPACING
-      : 550;
+  if (schema.types.length > 0) {
+    let currentX =
+      queryNode !== undefined
+        ? queryNode.x + queryNode.width + LAYOUT.COLUMN_SPACING
+        : 550;
     let currentY = 50;
     let maxWidthInColumn = 0;
 
-    schema.types.forEach((type: any, index: number) => {
+    schema.types.forEach((type: GraphQLType, index: number) => {
       const id = nodeId++;
-      const fieldsToShow = type.fields || [];
+      const fieldsToShow = type.fields ?? [];
       const dimensions = calculateBoxDimensions(fieldsToShow, type.name);
 
       maxWidthInColumn = Math.max(maxWidthInColumn, dimensions.width);
@@ -599,46 +684,56 @@ const parseSchemaToD3 = (schema: any) => {
     });
   }
 
-  if (schema.enums?.length > 0) {
+  if (schema.enums.length > 0) {
     let enumX =
       nodes.length > 0
         ? Math.max(...nodes.map((n) => n.x + n.width)) + LAYOUT.COLUMN_SPACING
         : 1200;
     let enumY = 50;
 
-    schema.enums.forEach((enumType: any) => {
-      const id = nodeId++;
-      const enumValues = enumType.values || [];
-      const dimensions = calculateBoxDimensions(enumValues, enumType.name);
-      const node = {
-        id,
-        name: enumType.name,
-        type: "enum",
-        color: "hsl(var(--c-secondary-600))",
-        fields: enumValues,
-        x: enumX,
-        y: enumY,
-        width: dimensions.width,
-        height: dimensions.height,
-      };
+    schema.enums.forEach(
+      (enumType: { name: string; values: Array<{ name: string }> }) => {
+        const id = nodeId++;
+        const enumValues = enumType.values ?? [];
+        // Convert enum values to GraphQLField format for calculateBoxDimensions
+        const enumFields: GraphQLField[] = enumValues.map(
+          (v: { name: string }) => ({
+            name: v.name,
+            args: [],
+            type: enumType.name,
+          }),
+        );
+        const dimensions = calculateBoxDimensions(enumFields, enumType.name);
+        const node = {
+          id,
+          name: enumType.name,
+          type: "enum",
+          color: "hsl(var(--c-secondary-600))",
+          fields: enumFields,
+          x: enumX,
+          y: enumY,
+          width: dimensions.width,
+          height: dimensions.height,
+        };
 
-      nodes.push(node);
-      nodeMap.set(enumType.name, node);
-      enumY += dimensions.height + LAYOUT.ENUM_SPACING;
-    });
+        nodes.push(node);
+        nodeMap.set(enumType.name, node);
+        enumY += dimensions.height + LAYOUT.ENUM_SPACING;
+      },
+    );
   }
   ["Query", "Mutation", "Subscription"].forEach((rootType) => {
     const rootNode = nodeMap.get(rootType);
-    if (rootNode && rootNode.fields) {
-      rootNode.fields.forEach((field: any) => {
+    if (rootNode !== undefined && rootNode.fields !== undefined) {
+      rootNode.fields.forEach((field: GraphQLField) => {
         const returnType = extractTypeName(field.type);
         const targetNode = nodeMap.get(returnType);
-        if (targetNode && rootNode !== targetNode) {
+        if (targetNode !== undefined && rootNode !== targetNode) {
           links.push({
             source: rootNode,
             target: targetNode,
+            type: "field",
             fieldName: field.name,
-            fromRoot: true,
           });
         }
       });
@@ -646,19 +741,19 @@ const parseSchemaToD3 = (schema: any) => {
   });
 
   // Links between custom types
-  if (schema.types?.length > 0) {
-    schema.types.forEach((type: any) => {
+  if (schema.types.length > 0) {
+    schema.types.forEach((type: GraphQLType) => {
       const sourceNode = nodeMap.get(type.name);
-      if (type.fields && sourceNode) {
-        type.fields.forEach((field: any) => {
+      if (type.fields !== undefined && sourceNode !== undefined) {
+        type.fields.forEach((field: GraphQLField) => {
           const fieldType = extractTypeName(field.type);
           const targetNode = nodeMap.get(fieldType);
-          if (targetNode && sourceNode !== targetNode) {
+          if (targetNode !== undefined && sourceNode !== targetNode) {
             links.push({
               source: sourceNode,
               target: targetNode,
+              type: "field",
               fieldName: field.name,
-              fromRoot: false,
             });
           }
         });
@@ -670,15 +765,15 @@ const parseSchemaToD3 = (schema: any) => {
 };
 
 const extractTypeName = (typeString: string): string => {
-  if (!typeString) return "";
-  return typeString.replace(/[\[\]!]/g, "");
+  if (typeString === "") return "";
+  return typeString.replace(/[[\]!]/g, "");
 };
 
-const loadVoyagerVisualization = async () => {
-  if (!cachedD3Data.value) return;
+const loadVoyagerVisualization = () => {
+  if (cachedD3Data.value === undefined) return;
 
   try {
-    if (!voyagerContainer.value) {
+    if (voyagerContainer.value === undefined) {
       throw new Error("Container ref is not available");
     }
 
@@ -704,17 +799,18 @@ const loadVoyagerVisualization = async () => {
         currentTransform.value = event.transform;
       });
 
-    svg.call(zoom as any);
+    svg.call(zoom);
     currentZoom.value = zoom;
 
     svg.on("click", (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target as HTMLElement | undefined;
       if (
+        target === undefined ||
         target === event.currentTarget ||
-        (target && target.tagName === "svg")
+        (target !== null && target.tagName === "svg")
       ) {
-        highlightedNodeId.value = null;
-        if (cachedD3Data.value) {
+        highlightedNodeId.value = undefined;
+        if (cachedD3Data.value !== undefined) {
           updateNodeStyles(cachedD3Data.value.nodes, []);
         }
       }
@@ -736,18 +832,28 @@ const loadVoyagerVisualization = async () => {
 
     const linkGroup = g.append("g").attr("class", "links");
 
-    links.forEach((link: any) => {
-      const sourceNode = link.source;
-      const targetNode = link.target;
+    links.forEach((link: D3Link) => {
+      const sourceNode =
+        typeof link.source === "object"
+          ? link.source
+          : nodes.find((n) => n.id === link.source);
+      const targetNode =
+        typeof link.target === "object"
+          ? link.target
+          : nodes.find((n) => n.id === link.target);
+
+      if (sourceNode === undefined || targetNode === undefined) return;
 
       const fieldIndex =
-        sourceNode.fields?.findIndex((f: any) => f.name === link.fieldName) ||
-        0;
+        sourceNode.fields?.findIndex(
+          (f: { name: string; type: string }) => f.name === link.fieldName,
+        ) ?? -1;
+      const fieldIndexToUse = fieldIndex >= 0 ? fieldIndex : 0;
       const fieldY =
         sourceNode.y +
         LAYOUT.HEADER_HEIGHT +
         10 +
-        fieldIndex * LAYOUT.FIELD_HEIGHT;
+        fieldIndexToUse * LAYOUT.FIELD_HEIGHT;
 
       const x1 = sourceNode.x + sourceNode.width;
       const y1 = fieldY;
@@ -764,17 +870,23 @@ const loadVoyagerVisualization = async () => {
         .attr("d", path)
         .attr(
           "stroke",
-          link.fromRoot
+          (link as D3Link & { fromRoot?: boolean }).fromRoot === true
             ? "hsl(var(--c-primary-400))"
             : "hsl(var(--c-surface-400))",
         )
-        .attr("stroke-width", link.fromRoot ? 2.5 : 1.5)
+        .attr(
+          "stroke-width",
+          (link as D3Link & { fromRoot?: boolean }).fromRoot === true
+            ? 2.5
+            : 1.5,
+        )
         .attr("fill", "none")
         .attr("opacity", 0.7)
         .attr("marker-end", "url(#arrowhead)")
         .style("transition", "all 0.2s ease");
 
-      if (link.fieldName) {
+      const linkFieldName = (link as D3Link & { fieldName?: string }).fieldName;
+      if (linkFieldName !== undefined) {
         const labelX = midX;
         const labelY = (y1 + y2) / 2;
 
@@ -789,26 +901,33 @@ const loadVoyagerVisualization = async () => {
           .attr("opacity", 0)
           .style("pointer-events", "none")
           .style("user-select", "none")
-          .text(link.fieldName);
+          .text(linkFieldName);
       }
 
+      const linkFromRoot =
+        (link as D3Link & { fromRoot?: boolean }).fromRoot === true;
       linkPath
         .on("mouseenter", function () {
           d3.select(this)
-            .attr("stroke-width", link.fromRoot ? 3.5 : 2.5)
+            .attr("stroke-width", linkFromRoot ? 3.5 : 2.5)
             .attr("opacity", 1);
 
-          linkGroup
-            .selectAll(".link-label")
-            .filter(function () {
-              const label = d3.select(this as SVGElement);
-              return label.text() === link.fieldName;
-            })
-            .attr("opacity", 1);
+          const linkFieldNameForFilter = (
+            link as D3Link & { fieldName?: string }
+          ).fieldName;
+          if (linkFieldNameForFilter !== undefined) {
+            linkGroup
+              .selectAll(".link-label")
+              .filter(function () {
+                const label = d3.select(this as SVGElement);
+                return label.text() === linkFieldNameForFilter;
+              })
+              .attr("opacity", 1);
+          }
         })
         .on("mouseleave", function () {
           d3.select(this as SVGElement)
-            .attr("stroke-width", link.fromRoot ? 2.5 : 1.5)
+            .attr("stroke-width", linkFromRoot ? 2.5 : 1.5)
             .attr("opacity", 0.7);
 
           linkGroup.selectAll(".link-label").attr("opacity", 0);
@@ -817,119 +936,124 @@ const loadVoyagerVisualization = async () => {
 
     // Create node groups
     const nodeGroups = g
-      .selectAll(".node")
+      .selectAll<SVGGElement, D3Node>(".node")
       .data(nodes)
       .enter()
       .append("g")
       .attr("class", "node")
-      .attr("transform", (d: any) => `translate(${d.x}, ${d.y})`)
+      .attr("transform", (d: D3Node) => `translate(${d.x}, ${d.y})`)
       .style("cursor", "pointer");
 
     // Draw node containers (boxes) - CAIDO THEME
     nodeGroups
       .append("rect")
-      .attr("width", (d: any) => d.width)
-      .attr("height", (d: any) => d.height)
+      .attr("width", (d: D3Node) => d.width)
+      .attr("height", (d: D3Node) => d.height)
       .attr("rx", 8)
       .attr("ry", 8)
       .attr("fill", "hsl(var(--c-surface-700))")
-      .attr("stroke", (d: any) => d.color)
+      .attr("stroke", (d: D3Node) => d.color)
       .attr("stroke-width", 2)
       .attr("filter", "drop-shadow(0 2px 8px rgba(0,0,0,0.3))");
 
     // Add node headers (type names)
     nodeGroups
       .append("rect")
-      .attr("width", (d: any) => d.width)
+      .attr("width", (d: D3Node) => d.width)
       .attr("height", 25)
       .attr("rx", 6)
       .attr("ry", 6)
-      .attr("fill", (d: any) => d.color);
+      .attr("fill", (d: D3Node) => d.color);
 
     nodeGroups
       .append("text")
-      .attr("x", (d: any) => d.width / 2)
+      .attr("x", (d: D3Node) => d.width / 2)
       .attr("y", 17)
       .attr("text-anchor", "middle")
       .attr("fill", "#ffffff")
       .attr("font-size", "12px")
       .attr("font-weight", "bold")
-      .text((d: any) => d.name);
+      .text((d: D3Node) => d.name);
 
     // Add field lists
-    nodeGroups.each(function (d: any) {
+    nodeGroups.each(function (d: D3Node) {
       const node = d3.select(this as SVGElement);
 
-      if (d.fields && d.fields.length > 0) {
-        d.fields.forEach((field: any, index: number) => {
-          const y = 35 + index * 18; // Back to original spacing
+      if (d.fields !== undefined && d.fields.length > 0) {
+        d.fields.forEach(
+          (field: { name: string; type: string }, index: number) => {
+            const y = 35 + index * 18; // Back to original spacing
 
-          // Simple field name display in graph
-          node
-            .append("text")
-            .attr("x", 8)
-            .attr("y", y)
-            .attr("font-size", "11px")
-            .attr("fill", "hsl(var(--c-surface-0))")
-            .attr("font-family", "monospace")
-            .attr("font-weight", "500")
-            .text(field.name);
-
-          // Field type on the right
-          if (field.type) {
+            // Simple field name display in graph
             node
               .append("text")
-              .attr("x", (d: any) => d.width - 12)
+              .attr("x", 8)
               .attr("y", y)
-              .attr("text-anchor", "end")
-              .attr("font-size", "10px")
-              .attr("fill", "hsl(var(--c-surface-300))")
-              .attr("font-style", "italic")
-              .text(field.type);
-          }
-        });
+              .attr("font-size", "11px")
+              .attr("fill", "hsl(var(--c-surface-0))")
+              .attr("font-family", "monospace")
+              .attr("font-weight", "500")
+              .text(field.name);
+
+            // Field type on the right
+            if (field.type !== undefined) {
+              node
+                .append("text")
+                .attr("x", d.width - 12)
+                .attr("y", y)
+                .attr("text-anchor", "end")
+                .attr("font-size", "10px")
+                .attr("fill", "hsl(var(--c-surface-300))")
+                .attr("font-style", "italic")
+                .text(field.type);
+            }
+          },
+        );
       }
     });
 
-    nodeGroups.on("click", (event: MouseEvent, d: any) => {
+    nodeGroups.on("click", (event: MouseEvent, d: D3Node) => {
       event.stopPropagation();
       toggleNodeHighlight(d);
     });
 
     nodeGroups
-      .on("mouseenter", function (this: SVGElement, event: MouseEvent, d: any) {
-        d3.select(this)
-          .select("rect")
-          .attr("stroke-width", 3)
-          .attr("filter", "drop-shadow(0 4px 12px rgba(0,0,0,0.4))");
+      .on(
+        "mouseenter",
+        function (this: SVGElement, event: MouseEvent, d: D3Node) {
+          d3.select(this)
+            .select("rect")
+            .attr("stroke-width", 3)
+            .attr("filter", "drop-shadow(0 4px 12px rgba(0,0,0,0.4))");
 
-        const tooltipHtml = `
+          const tooltipHtml = `
         <div style="background: hsl(var(--c-surface-900)); border: 1px solid hsl(var(--c-surface-600)); padding: 8px; border-radius: 6px; max-width: 300px;">
           <div style="font-weight: bold; color: ${d.color}; margin-bottom: 4px;">${d.name}</div>
           <div style="font-size: 11px; color: hsl(var(--c-surface-300));">
             Type: ${d.type}<br/>
-            Fields: ${d.fields?.length || 0}
+            Fields: ${d.fields?.length ?? 0}
           </div>
         </div>
       `;
 
-        const tooltip = d3
-          .select("body")
-          .append("div")
-          .attr("class", "voyager-tooltip")
-          .style("position", "absolute")
-          .style("pointer-events", "none")
-          .style("opacity", 0)
-          .html(tooltipHtml);
+          const tooltip = d3
+            .select("body")
+            .append("div")
+            .attr("class", "voyager-tooltip")
+            .style("position", "absolute")
+            .style("pointer-events", "none")
+            .style("opacity", 0)
+            .html(tooltipHtml);
 
-        tooltip.transition().duration(200).style("opacity", 1);
+          tooltip.transition().duration(200).style("opacity", 1);
 
-        d3.select(this).on("mousemove", (e: any) => {
-          tooltip
-            .style("left", e.pageX + 10 + "px")
-            .style("top", e.pageY - 28 + "px");
-        });
-      })
+          d3.select(this).on("mousemove", (e: MouseEvent) => {
+            tooltip
+              .style("left", e.pageX + 10 + "px")
+              .style("top", e.pageY - 28 + "px");
+          });
+        },
+      )
       .on("mouseleave", function () {
         d3.select(this)
           .select("rect")
@@ -939,13 +1063,16 @@ const loadVoyagerVisualization = async () => {
         d3.selectAll(".voyager-tooltip").remove();
       });
 
-    if (debouncedSearchTerm.value) {
+    if (debouncedSearchTerm.value !== "") {
       const search = debouncedSearchTerm.value.toLowerCase();
-      nodeGroups.each(function (d: any) {
+      nodeGroups.each(function (d: D3Node) {
         const node = d3.select(this);
         const matches =
           d.name.toLowerCase().includes(search) ||
-          d.fields?.some((f: any) => f.name.toLowerCase().includes(search));
+          (d.fields?.some((f: { name: string; type: string }) =>
+            f.name.toLowerCase().includes(search),
+          ) ??
+            false);
 
         if (matches) {
           node
@@ -971,10 +1098,10 @@ const loadVoyagerVisualization = async () => {
 // Setup minimap drag interaction
 const setupMinimapDrag = () => {
   if (
-    !minimapSvg.value ||
-    !voyagerContainer.value ||
-    !currentZoom.value ||
-    !cachedD3Data.value
+    minimapSvg.value === undefined ||
+    voyagerContainer.value === undefined ||
+    currentZoom.value === undefined ||
+    cachedD3Data.value === undefined
   )
     return;
 
@@ -987,9 +1114,9 @@ const setupMinimapDrag = () => {
   let initialViewportY = 0;
 
   const drag = d3
-    .drag()
+    .drag<SVGRectElement, unknown>()
     .on("start", (event) => {
-      if (!currentTransform.value) return;
+      if (currentTransform.value === undefined) return;
 
       // Store the initial click position
       dragStartX = event.x;
@@ -1000,7 +1127,11 @@ const setupMinimapDrag = () => {
       initialViewportY = -currentTransform.value.y / currentTransform.value.k;
     })
     .on("drag", (event) => {
-      if (!currentTransform.value || !voyagerContainer.value) return;
+      if (
+        currentTransform.value === undefined ||
+        voyagerContainer.value === undefined
+      )
+        return;
 
       const svg = d3.select(voyagerContainer.value).select("svg");
 
@@ -1017,16 +1148,17 @@ const setupMinimapDrag = () => {
       const newY = -newViewportY * currentTransform.value.k;
 
       // Apply the new transform
-      svg
-        .transition()
-        .duration(0)
-        .call(
+      if (currentZoom.value !== undefined) {
+        svg.transition().duration(0).call(
+          // @ts-expect-error - D3.js transition type compatibility
           currentZoom.value.transform,
           d3.zoomIdentity.translate(newX, newY).scale(currentTransform.value.k),
         );
+      }
     });
 
-  minimapRect.call(drag as any);
+  // @ts-expect-error - D3.js drag behavior type compatibility
+  minimapRect.call(drag);
   minimapRect.style("cursor", "move");
 };
 
@@ -1152,7 +1284,7 @@ onMounted(() => {
             </div>
           </div>
           <div
-            v-else-if="!selectedSession"
+            v-else-if="selectedSession === undefined"
             class="h-full flex items-center justify-center"
           >
             <div class="text-center text-surface-500">
@@ -1301,7 +1433,7 @@ onMounted(() => {
 
               <!-- Zoom Controls -->
               <div
-                v-if="selectedSession"
+                v-if="selectedSession !== undefined"
                 class="absolute top-4 right-4 flex flex-col gap-2 bg-surface-900 border border-surface-600 rounded-lg p-2 shadow-lg"
               >
                 <Button
@@ -1341,7 +1473,9 @@ onMounted(() => {
 
               <!-- Minimap -->
               <div
-                v-if="selectedSession && cachedD3Data"
+                v-if="
+                  selectedSession !== undefined && cachedD3Data !== undefined
+                "
                 class="absolute bottom-4 right-4 w-48 h-32 border border-surface-500 rounded-lg shadow-lg overflow-hidden"
                 style="background: hsl(var(--c-surface-900))"
               >

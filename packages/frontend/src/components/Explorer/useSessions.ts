@@ -16,7 +16,7 @@ export type ExplorerSession = {
 export const useSessions = () => {
   const sdk = useSDK();
   const sessions = ref<ExplorerSession[]>([]);
-  const selectedSessionId = ref<string | null>(null);
+  const selectedSessionId = ref<string | undefined>(undefined);
 
   const selectedSession = computed(() => {
     return sessions.value.find(
@@ -26,7 +26,8 @@ export const useSessions = () => {
 
   const saveAllData = async () => {
     try {
-      const currentStorage: any = sdk.storage.get() || {};
+      const currentStorage: Record<string, unknown> =
+        (sdk.storage.get() as Record<string, unknown>) ?? {};
       currentStorage.explorerSessions = sessions.value;
       currentStorage.selectedExplorerSessionId = selectedSessionId.value;
       // @ts-expect-error - SDK storage.set accepts any object
@@ -36,15 +37,20 @@ export const useSessions = () => {
     }
   };
 
-  const loadSessions = async () => {
+  const loadSessions = () => {
     try {
-      const stored = sdk.storage.get() as {
-        explorerSessions?: any[];
-        selectedExplorerSessionId?: string;
-      } | null;
+      const stored = sdk.storage.get() as
+        | {
+            explorerSessions?: ExplorerSession[];
+            selectedExplorerSessionId?: string;
+          }
+        | undefined;
 
-      if (stored?.explorerSessions && Array.isArray(stored.explorerSessions)) {
-        sessions.value = stored.explorerSessions.map((s: any) => ({
+      if (
+        stored?.explorerSessions !== undefined &&
+        Array.isArray(stored.explorerSessions)
+      ) {
+        sessions.value = stored.explorerSessions.map((s: ExplorerSession) => ({
           ...s,
           createdAt: new Date(s.createdAt),
         }));
@@ -53,20 +59,20 @@ export const useSessions = () => {
       }
 
       if (
-        stored?.selectedExplorerSessionId &&
+        stored?.selectedExplorerSessionId !== undefined &&
         sessions.value.find(
           (s: ExplorerSession) => s.id === stored?.selectedExplorerSessionId,
-        )
+        ) !== undefined
       ) {
         selectedSessionId.value = stored.selectedExplorerSessionId;
       } else if (sessions.value.length > 0) {
-        selectedSessionId.value = sessions.value[0]?.id || null;
+        selectedSessionId.value = sessions.value[0]?.id ?? undefined;
       } else {
-        selectedSessionId.value = null;
+        selectedSessionId.value = undefined;
       }
     } catch (error) {
       sessions.value = [];
-      selectedSessionId.value = null;
+      selectedSessionId.value = undefined;
     }
   };
 
@@ -83,7 +89,9 @@ export const useSessions = () => {
       sessions.value.splice(index, 1);
       if (selectedSessionId.value === sessionId) {
         selectedSessionId.value =
-          sessions.value.length > 0 ? sessions.value[0]?.id || null : null;
+          sessions.value.length > 0
+            ? (sessions.value[0]?.id ?? undefined)
+            : undefined;
       }
       await saveAllData();
     }
@@ -91,7 +99,7 @@ export const useSessions = () => {
 
   const renameSession = async (sessionId: string, newTitle: string) => {
     const session = sessions.value.find((s) => s.id === sessionId);
-    if (session) {
+    if (session !== undefined) {
       session.title = newTitle;
       await saveAllData();
     }
@@ -99,12 +107,13 @@ export const useSessions = () => {
 
   const clearAllData = async () => {
     sessions.value = [];
-    selectedSessionId.value = null;
+    selectedSessionId.value = undefined;
 
     try {
-      const currentStorage: any = sdk.storage.get() || {};
+      const currentStorage: Record<string, unknown> =
+        (sdk.storage.get() as Record<string, unknown>) ?? {};
       currentStorage.explorerSessions = [];
-      currentStorage.selectedExplorerSessionId = null;
+      currentStorage.selectedExplorerSessionId = undefined;
       // @ts-expect-error - SDK storage.set accepts any object
       await sdk.storage.set(currentStorage);
       sdk.window.showToast("All sessions and data cleared successfully", {
