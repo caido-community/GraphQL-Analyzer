@@ -18,7 +18,11 @@ const emit = defineEmits<{
   "remove-header": [index: number];
 }>();
 
-const updateHeader = (index: number, field: "name" | "value", value: string) => {
+const updateHeader = (
+  index: number,
+  field: "name" | "value",
+  value: string,
+) => {
   const newHeaders = [...props.customHeaders];
   if (newHeaders[index] !== undefined) {
     newHeaders[index] = { ...newHeaders[index], [field]: value };
@@ -42,32 +46,30 @@ const updateHeader = (index: number, field: "name" | "value", value: string) => 
         </div>
 
         <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium mb-2">Max Depth</label>
-            <InputNumber
-              :model-value="maxDepth"
-              :min="1"
-              :max="100"
-              class="w-full"
-              @update:model-value="emit('update:maxDepth', $event ?? 10)"
-            />
-            <p class="text-xs text-surface-400 mt-1">
-              For depth-limit attacks
-            </p>
-          </div>
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <label class="block text-sm font-medium mb-2">Max Depth</label>
+              <InputNumber
+                :model-value="maxDepth"
+                :min="1"
+                :max="100"
+                class="w-full"
+                @update:model-value="emit('update:maxDepth', $event ?? 10)"
+              />
+              <p class="text-xs text-surface-400 mt-1">For depth-limit attacks</p>
+            </div>
 
-          <div>
-            <label class="block text-sm font-medium mb-2">Batch Size</label>
-            <InputNumber
-              :model-value="batchSize"
-              :min="1"
-              :max="50"
-              class="w-full"
-              @update:model-value="emit('update:batchSize', $event ?? 5)"
-            />
-            <p class="text-xs text-surface-400 mt-1">
-              For batch-query attacks
-            </p>
+            <div class="flex-1">
+              <label class="block text-sm font-medium mb-2">Batch Size</label>
+              <InputNumber
+                :model-value="batchSize"
+                :min="1"
+                :max="50"
+                class="w-full"
+                @update:model-value="emit('update:batchSize', $event ?? 5)"
+              />
+              <p class="text-xs text-surface-400 mt-1">For batch-query attacks</p>
+            </div>
           </div>
 
           <div>
@@ -98,13 +100,17 @@ const updateHeader = (index: number, field: "name" | "value", value: string) => 
                   :model-value="header.name"
                   placeholder="Header name"
                   class="flex-1 text-sm"
-                  @update:model-value="updateHeader(index, 'name', $event ?? '')"
+                  @update:model-value="
+                    updateHeader(index, 'name', $event ?? '')
+                  "
                 />
                 <InputText
                   :model-value="header.value"
                   placeholder="Header value"
                   class="flex-1 text-sm"
-                  @update:model-value="updateHeader(index, 'value', $event ?? '')"
+                  @update:model-value="
+                    updateHeader(index, 'value', $event ?? '')
+                  "
                 />
                 <Button
                   icon="fas fa-times"
@@ -121,4 +127,3 @@ const updateHeader = (index: number, field: "name" | "value", value: string) => 
     </template>
   </Card>
 </template>
-

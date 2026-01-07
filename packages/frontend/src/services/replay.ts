@@ -200,8 +200,8 @@ export class GraphQLReplayService {
           (c: Collection) => c.name === collectionName,
         );
         collectionId = existingCollection?.id;
-      } catch (error) {
-        void 0;
+      } catch {
+        collectionId = undefined;
       }
 
       if (collectionId === undefined) {
@@ -252,8 +252,7 @@ export class GraphQLReplayService {
         if (replaySDK.moveSession !== undefined) {
           await replaySDK.moveSession(sessionId, collectionId);
         }
-      } catch (moveError) {
-        void 0;
+      } catch {
       }
 
       try {
@@ -261,8 +260,7 @@ export class GraphQLReplayService {
           id: sessionId,
           name: sessionName,
         });
-      } catch (renameError) {
-        void 0;
+      } catch {
       }
     } catch (error) {
       throw new Error(

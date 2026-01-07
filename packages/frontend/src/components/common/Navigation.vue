@@ -67,11 +67,11 @@ const showSettings = ref(false);
     </template>
     <template #end>
       <Button
+        v-tooltip="'Settings'"
         icon="fas fa-cog"
         severity="contrast"
         size="small"
         text
-        v-tooltip="'Settings'"
         @click="showSettings = true"
       />
     </template>

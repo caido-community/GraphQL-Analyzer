@@ -1,4 +1,5 @@
 import type { FrontendSDK } from "../types";
+
 import { createStorageService } from "./storage";
 
 export class BackgroundAttackService {
@@ -12,7 +13,10 @@ export class BackgroundAttackService {
     this.storageService = createStorageService(sdk);
   }
 
-  async startBackgroundAttack(sessionId: string, attackTypes: string[]): Promise<void> {
+  async startBackgroundAttack(
+    sessionId: string,
+    attackTypes: string[],
+  ): Promise<void> {
     await this.stopBackgroundAttack();
 
     await this.storageService.set("graphql-analyzer-background-attack", {

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import Card from "primevue/card";
+import Checkbox from "primevue/checkbox";
 import Dropdown from "primevue/dropdown";
 import { computed } from "vue";
+
 import type { ExplorerSession } from "@/components/Explorer/useSessions";
 
 const props = defineProps<{
@@ -10,14 +12,16 @@ const props = defineProps<{
   selectedSessionId: string | undefined;
   sessions: ExplorerSession[];
   customUrl: string;
-  selectedRequest: {
-    id?: string;
-    host?: string;
-    port?: number;
-    path?: string;
-    url?: string;
-    method?: string;
-  } | undefined;
+  selectedRequest:
+    | {
+        id?: string;
+        host?: string;
+        port?: number;
+        path?: string;
+        url?: string;
+        method?: string;
+      }
+    | undefined;
   targetUrl: string;
 }>();
 
@@ -38,6 +42,13 @@ const selectedSession = computed(() => {
 const formatDate = (date: Date) => {
   return new Date(date).toLocaleString();
 };
+
+const handleCustomUrlInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  if (target !== null) {
+    emit("update:customUrl", target.value);
+  }
+};
 </script>
 
 <template>
@@ -56,74 +67,72 @@ const formatDate = (date: Date) => {
 
         <div class="flex flex-wrap gap-6 mb-4">
           <div class="flex items-center gap-2">
-            <input
-              id="target-session"
-              type="radio"
-              :checked="!useCustomUrl && !useSelectedRequest"
-              class="text-primary-600"
-              @change="
-                () => {
-                  emit('update:useCustomUrl', false);
-                  emit('update:useSelectedRequest', false);
+            <Checkbox
+              :model-value="!useCustomUrl && !useSelectedRequest"
+              :binary="true"
+              input-id="target-session"
+              @update:model-value="
+                (value: boolean) => {
+                  if (value) {
+                    emit('update:useCustomUrl', false);
+                    emit('update:useSelectedRequest', false);
+                  }
                 }
               "
             />
-            <label for="target-session" class="text-sm font-medium"
+            <label for="target-session" class="text-sm font-medium cursor-pointer"
               >Use Session</label
             >
           </div>
 
           <div class="flex items-center gap-2">
-            <input
-              id="target-custom"
-              type="radio"
-              :checked="useCustomUrl"
-              class="text-primary-600"
-              @change="
-                () => {
-                  emit('update:useCustomUrl', true);
-                  emit('update:useSelectedRequest', false);
+            <Checkbox
+              :model-value="useCustomUrl"
+              :binary="true"
+              input-id="target-custom"
+              @update:model-value="
+                (value: boolean) => {
+                  if (value) {
+                    emit('update:useCustomUrl', true);
+                    emit('update:useSelectedRequest', false);
+                  }
                 }
               "
             />
-            <label for="target-custom" class="text-sm font-medium"
+            <label for="target-custom" class="text-sm font-medium cursor-pointer"
               >Use Custom URL</label
             >
           </div>
 
           <div class="flex items-center gap-2">
-            <input
-              id="target-request"
-              type="radio"
-              :checked="useSelectedRequest"
-              class="text-primary-600"
+            <Checkbox
+              :model-value="useSelectedRequest"
+              :binary="true"
+              input-id="target-request"
               :disabled="!selectedRequest"
-              @change="
-                () => {
-                  emit('update:useSelectedRequest', true);
-                  emit('update:useCustomUrl', false);
+              @update:model-value="
+                (value: boolean) => {
+                  if (value) {
+                    emit('update:useSelectedRequest', true);
+                    emit('update:useCustomUrl', false);
+                  }
                 }
               "
             />
             <label
               for="target-request"
-              class="text-sm font-medium"
+              class="text-sm font-medium cursor-pointer"
               :class="{ 'text-surface-500': !selectedRequest }"
             >
               Use Selected Request
             </label>
-            <span
-              v-if="!selectedRequest"
-              class="text-xs text-surface-500"
+            <span v-if="!selectedRequest" class="text-xs text-surface-500"
               >(None selected)</span
             >
           </div>
         </div>
 
-        <div
-          v-if="!useCustomUrl && !useSelectedRequest"
-          class="space-y-2"
-        >
+        <div v-if="!useCustomUrl && !useSelectedRequest" class="space-y-2">
           <label class="block text-sm font-medium">Select Session</label>
           <Dropdown
             :model-value="selectedSessionId"
@@ -152,9 +161,7 @@ const formatDate = (date: Date) => {
               <span class="font-medium">{{ selectedSession.title }}</span>
             </div>
             <div class="text-xs text-surface-400">
-              <div>
-                <strong>URL:</strong> {{ selectedSession.url }}
-              </div>
+              <div><strong>URL:</strong> {{ selectedSession.url }}</div>
               <div>
                 <strong>Introspection:</strong>
                 {{
@@ -174,11 +181,11 @@ const formatDate = (date: Date) => {
         <div v-if="useCustomUrl" class="space-y-2">
           <label class="block text-sm font-medium">GraphQL Endpoint URL</label>
           <input
-            v-model="customUrl"
+            :value="customUrl"
             type="text"
             placeholder="https://api.example.com/graphql"
             class="w-full px-3 py-2 bg-surface-700 border border-surface-600 rounded text-sm"
-            @input="emit('update:customUrl', ($event.target as HTMLInputElement).value)"
+            @input="handleCustomUrlInput"
           />
         </div>
 
@@ -206,4 +213,3 @@ const formatDate = (date: Date) => {
     </template>
   </Card>
 </template>
-

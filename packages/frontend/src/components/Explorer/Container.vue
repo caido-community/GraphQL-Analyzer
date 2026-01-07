@@ -64,11 +64,14 @@ const loadExplorerState = async () => {
 
   await nextTick();
   await nextTick();
-  
+
   const storedExpandedKeys = storageService.get<Record<string, boolean>>(
     `explorer-expanded-keys-${selectedSessionId.value}`,
   );
-  if (storedExpandedKeys !== undefined && Object.keys(storedExpandedKeys).length > 0) {
+  if (
+    storedExpandedKeys !== undefined &&
+    Object.keys(storedExpandedKeys).length > 0
+  ) {
     expandedKeys.value = { ...storedExpandedKeys };
     await nextTick();
   }
@@ -174,7 +177,7 @@ watch(selectedSessionId, async () => {
 });
 
 onMounted(async () => {
-  await loadSessions();
+  loadSessions();
   if (selectedSessionId.value !== undefined) {
     await nextTick();
     await nextTick();

@@ -29,10 +29,17 @@ const isVisible = computed({
 
 const loadSettings = () => {
   const stored = storageService.get<number>("graphql-analyzer-max-depth");
-  maxDepth.value = stored !== undefined && stored > 0 ? stored : DEFAULT_MAX_DEPTH;
+  maxDepth.value =
+    stored !== undefined && stored > 0 ? stored : DEFAULT_MAX_DEPTH;
 };
 
 const saveSettings = async () => {
+  if (maxDepth.value < 1 || maxDepth.value > 10) {
+    sdk.window.showToast("Max Depth must be between 1 and 10", {
+      variant: "error",
+    });
+    return;
+  }
   await storageService.set("graphql-analyzer-max-depth", maxDepth.value);
   sdk.window.showToast("Settings saved successfully", { variant: "success" });
   isVisible.value = false;
@@ -42,11 +49,14 @@ const resetSettings = () => {
   maxDepth.value = DEFAULT_MAX_DEPTH;
 };
 
-watch(() => props.visible, (newValue) => {
-  if (newValue === true) {
-    loadSettings();
-  }
-});
+watch(
+  () => props.visible,
+  (newValue) => {
+    if (newValue === true) {
+      loadSettings();
+    }
+  },
+);
 </script>
 
 <template>
@@ -56,9 +66,15 @@ watch(() => props.visible, (newValue) => {
     :style="{ width: '500px' }"
     :pt="{
       root: { class: 'p-0' },
-      header: { class: 'p-4 border-b border-surface-700 bg-surface-800 flex items-center justify-between' },
+      header: {
+        class:
+          'p-4 border-b border-surface-700 bg-surface-800 flex items-center justify-between',
+      },
       content: { class: 'p-4 bg-surface-900' },
-      footer: { class: 'p-4 border-t border-surface-700 flex justify-end gap-2 bg-surface-800' },
+      footer: {
+        class:
+          'p-4 border-t border-surface-700 flex justify-end gap-2 bg-surface-800',
+      },
       closeButton: { class: 'text-surface-300 hover:text-surface-100' },
       closeButtonIcon: { class: 'text-surface-300' },
     }"
@@ -78,10 +94,14 @@ watch(() => props.visible, (newValue) => {
           <div class="space-y-4">
             <div>
               <div class="flex items-center gap-2 mb-2">
-                <label class="text-sm font-medium text-surface-200">Max Depth</label>
+                <label class="text-sm font-medium text-surface-200"
+                  >Max Depth</label
+                >
                 <i
+                  v-tooltip="
+                    'Recommended to keep max depth under 5. Increasing this value will generate longer GraphQL queries with more nested fields, which may impact performance and readability.'
+                  "
                   class="fas fa-eye text-surface-400 cursor-help hover:text-surface-300 transition-colors"
-                  v-tooltip="'Recommended to keep max depth under 5. Increasing this value will generate longer GraphQL queries with more nested fields, which may impact performance and readability.'"
                 />
               </div>
               <div class="flex items-center gap-3">
@@ -92,15 +112,23 @@ watch(() => props.visible, (newValue) => {
                   show-buttons
                   class="w-32"
                   :pt="{
-                    input: { class: 'bg-surface-800 border-surface-700 text-surface-100' },
+                    input: {
+                      class:
+                        'bg-surface-800 border-surface-700 text-surface-100',
+                    },
                     buttonGroup: { class: 'bg-surface-800 border-surface-700' },
-                    incrementButton: { class: 'text-surface-300 hover:text-surface-100' },
-                    decrementButton: { class: 'text-surface-300 hover:text-surface-100' },
+                    incrementButton: {
+                      class: 'text-surface-300 hover:text-surface-100',
+                    },
+                    decrementButton: {
+                      class: 'text-surface-300 hover:text-surface-100',
+                    },
                   }"
                 />
               </div>
               <p class="text-xs text-surface-400 mt-2">
-                Controls the maximum nesting depth for generated GraphQL queries. Lower values produce shorter, more readable queries.
+                Controls the maximum nesting depth for generated GraphQL
+                queries. Lower values produce shorter, more readable queries.
               </p>
             </div>
           </div>

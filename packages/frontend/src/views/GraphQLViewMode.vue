@@ -6,15 +6,17 @@ import TabView from "primevue/tabview";
 import { computed, onMounted, ref } from "vue";
 
 import CodeEditor from "../components/common/CodeEditor.vue";
-import type { FrontendSDK } from "../types";
 import { createStorageService } from "../services/storage";
+import type { FrontendSDK } from "../types";
 
 const props = defineProps<{
   sdk: API;
   request: RequestFull;
 }>();
 
-const storageService = createStorageService(props.sdk as unknown as FrontendSDK);
+const storageService = createStorageService(
+  props.sdk as unknown as FrontendSDK,
+);
 
 const editableQuery = ref("");
 const editableVariables = ref("{}");

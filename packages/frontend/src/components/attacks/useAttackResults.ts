@@ -113,4 +113,3 @@ function getMaxSeverity(
   if (findings.some((f) => f.severity === "low")) return "low";
   return "info";
 }
-

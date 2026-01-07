@@ -92,7 +92,8 @@ const getSeverityIcon = (severity: string) => {
                   class="text-xs px-2 py-0.5 rounded"
                   :class="{
                     'bg-red-900 text-red-400': attack.severity === 'High',
-                    'bg-yellow-900 text-yellow-400': attack.severity === 'Medium',
+                    'bg-yellow-900 text-yellow-400':
+                      attack.severity === 'Medium',
                     'bg-blue-900 text-blue-400': attack.severity === 'Low',
                   }"
                 >
@@ -107,4 +108,3 @@ const getSeverityIcon = (severity: string) => {
     </template>
   </Card>
 </template>
-

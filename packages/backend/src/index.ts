@@ -114,7 +114,15 @@ const getAttackTemplates = (sdk: SDK) => {
 const getRequestInfo = async (
   sdk: SDK,
   requestId: string,
-): Promise<Result<{ host: string; port: number; path: string; url: string; method: string }>> => {
+): Promise<
+  Result<{
+    host: string;
+    port: number;
+    path: string;
+    url: string;
+    method: string;
+  }>
+> => {
   try {
     if (!requestId) {
       return { kind: "Error", error: "No request ID provided" };
@@ -201,7 +209,10 @@ export function init(sdk: SDK<API>) {
   setSDK(sdk);
 
   sdk.api.register("testGraphQLEndpoint", testGraphQLEndpoint);
-  sdk.api.register("testGraphQLEndpointFromRequest", testGraphQLEndpointFromRequest);
+  sdk.api.register(
+    "testGraphQLEndpointFromRequest",
+    testGraphQLEndpointFromRequest,
+  );
   sdk.api.register("generateGraphQLQuery", generateGraphQLQuery);
   sdk.api.register("executeGraphQLQuery", executeGraphQLQuery);
   sdk.api.register("executeGraphQLAttacks", executeGraphQLAttacks);

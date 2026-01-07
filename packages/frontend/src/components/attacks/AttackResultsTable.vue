@@ -86,15 +86,9 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
             }"
             @row-select="emit('select-result', $event.data.rawResult)"
           >
-            <Column
-              field="id"
-              header="ID"
-              class="w-16 text-center"
-            >
+            <Column field="id" header="ID" class="w-16 text-center">
               <template #body="{ data }">
-                <span class="font-mono text-surface-200">{{
-                  data.id
-                }}</span>
+                <span class="font-mono text-surface-200">{{ data.id }}</span>
               </template>
             </Column>
 
@@ -107,15 +101,11 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
                 <span
                   class="px-2 py-1 rounded text-xs font-medium"
                   :class="{
-                    'bg-green-900 text-green-400':
-                      data.statusCode === 200,
-                    'bg-red-900 text-red-400':
-                      data.statusCode >= 400,
+                    'bg-green-900 text-green-400': data.statusCode === 200,
+                    'bg-red-900 text-red-400': data.statusCode >= 400,
                     'bg-yellow-900 text-yellow-400':
-                      data.statusCode >= 300 &&
-                      data.statusCode < 400,
-                    'bg-gray-900 text-gray-400':
-                      data.statusCode === 0,
+                      data.statusCode >= 300 && data.statusCode < 400,
+                    'bg-gray-900 text-gray-400': data.statusCode === 0,
                   }"
                 >
                   {{ data.statusCode || "-" }}
@@ -135,11 +125,7 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
               </template>
             </Column>
 
-            <Column
-              field="attackType"
-              header="Attack Type"
-              class="flex-1"
-            >
+            <Column field="attackType" header="Attack Type" class="flex-1">
               <template #body="{ data }">
                 <span class="font-medium text-surface-100">{{
                   getAttackTypeLabel(data.attackType)
@@ -147,11 +133,7 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
               </template>
             </Column>
 
-            <Column
-              field="timing"
-              header="Time (ms)"
-              class="w-24 text-center"
-            >
+            <Column field="timing" header="Time (ms)" class="w-24 text-center">
               <template #body="{ data }">
                 <span class="font-mono text-surface-200">{{
                   data.timing || 0
@@ -159,36 +141,22 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
               </template>
             </Column>
 
-            <Column
-              field="findings"
-              header="Findings"
-              class="w-20 text-center"
-            >
+            <Column field="findings" header="Findings" class="w-20 text-center">
               <template #body="{ data }">
                 <div class="flex items-center justify-center">
                   <span
                     v-if="data.rawResult.findings.length > 0"
                     class="px-2 py-1 rounded text-xs font-medium"
-                    :class="
-                      getFindingSeverityClass(
-                        data.rawResult.findings,
-                      )
-                    "
+                    :class="getFindingSeverityClass(data.rawResult.findings)"
                   >
                     {{ data.rawResult.findings.length }}
                   </span>
-                  <span v-else class="text-surface-500 text-xs"
-                    >-</span
-                  >
+                  <span v-else class="text-surface-500 text-xs">-</span>
                 </div>
               </template>
             </Column>
 
-            <Column
-              field="status"
-              header="State"
-              class="w-24 text-center"
-            >
+            <Column field="status" header="State" class="w-24 text-center">
               <template #body="{ data }">
                 <div class="flex items-center justify-center">
                   <span
@@ -196,12 +164,9 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
                     :class="{
                       'bg-green-900 text-green-400':
                         data.status === 'completed',
-                      'bg-red-900 text-red-400':
-                        data.status === 'failed',
-                      'bg-blue-900 text-blue-400':
-                        data.status === 'running',
-                      'bg-gray-900 text-gray-400':
-                        data.status === 'cancelled',
+                      'bg-red-900 text-red-400': data.status === 'failed',
+                      'bg-blue-900 text-blue-400': data.status === 'running',
+                      'bg-gray-900 text-gray-400': data.status === 'cancelled',
                     }"
                   >
                     {{ data.status }}
@@ -212,18 +177,14 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
 
             <Column header="Actions" class="w-24 text-center">
               <template #body="{ data }">
-                <div
-                  class="flex items-center justify-center gap-1"
-                >
+                <div class="flex items-center justify-center gap-1">
                   <Button
                     v-tooltip="
                       data.rawResult.findings.length > 0
                         ? 'Create Caido Finding'
                         : 'No findings to create'
                     "
-                    :disabled="
-                      data.rawResult.findings.length === 0
-                    "
+                    :disabled="data.rawResult.findings.length === 0"
                     :severity="
                       data.rawResult.findings.length > 0
                         ? 'success'
@@ -232,9 +193,7 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
                     icon="fas fa-plus"
                     size="small"
                     text
-                    @click="
-                      emit('create-finding', data.rawResult)
-                    "
+                    @click="emit('create-finding', data.rawResult)"
                   />
 
                   <Button
@@ -254,4 +213,3 @@ const getFindingSeverityClass = (findings: Array<{ severity: string }>) => {
     </template>
   </Card>
 </template>
-

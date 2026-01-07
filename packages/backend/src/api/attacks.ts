@@ -27,7 +27,10 @@ export class GraphQLAttackService {
 
   constructor(private sdk: SDK) {}
 
-  private async addHeaders(spec: RequestSpec, config: AttackConfig): Promise<void> {
+  private async addHeaders(
+    spec: RequestSpec,
+    config: AttackConfig,
+  ): Promise<void> {
     let finalHeaders: Record<string, string> = {};
 
     let hostHeader = "";
@@ -53,10 +56,17 @@ export class GraphQLAttackService {
       hostHeader = "";
     }
 
-    if (config.requestId !== undefined && config.requestId !== null && config.requestId !== "") {
+    if (
+      config.requestId !== undefined &&
+      config.requestId !== null &&
+      config.requestId !== ""
+    ) {
       try {
         const requestResult = await this.sdk.requests.get(config.requestId);
-        if (requestResult !== undefined && requestResult.request !== undefined) {
+        if (
+          requestResult !== undefined &&
+          requestResult.request !== undefined
+        ) {
           const originalRaw = requestResult.request.getRaw().toText();
           const lines = originalRaw.split(/\r?\n/);
           let inHeaders = false;
@@ -96,7 +106,9 @@ export class GraphQLAttackService {
           }
         }
       } catch (error) {
-        this.sdk.console.error(`Failed to get request headers: ${error instanceof Error ? error.message : String(error)}`);
+        this.sdk.console.error(
+          `Failed to get request headers: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     } else if (config.useOriginalHeaders === true && config.originalHeaders) {
       finalHeaders = { ...config.originalHeaders };

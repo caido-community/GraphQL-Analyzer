@@ -10,12 +10,17 @@ export const useTreeData = (selectedSession: {
 
     const schema = selectedSession.value.schema;
     let urlDomain = "Unknown";
-    
-    if (selectedSession.value.title && selectedSession.value.title !== "Unknown") {
+
+    if (
+      selectedSession.value.title &&
+      selectedSession.value.title !== "Unknown"
+    ) {
       urlDomain = selectedSession.value.title;
     } else if (selectedSession.value.url) {
       if (selectedSession.value.url.startsWith("request:")) {
-        urlDomain = selectedSession.value.url.replace("request:", "").substring(0, 8);
+        urlDomain = selectedSession.value.url
+          .replace("request:", "")
+          .substring(0, 8);
       } else {
         try {
           urlDomain = new URL(selectedSession.value.url).hostname;

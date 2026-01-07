@@ -118,7 +118,10 @@ export class GraphQLService {
       const originalRequest = requestResult.request;
       const originalUrl = originalRequest.getUrl();
 
-      if (!originalUrl.startsWith("http://") && !originalUrl.startsWith("https://")) {
+      if (
+        !originalUrl.startsWith("http://") &&
+        !originalUrl.startsWith("https://")
+      ) {
         return {
           kind: "Error",
           error: "Request URL must start with http:// or https://",
@@ -390,67 +393,66 @@ export class GraphQLService {
     try {
       const jsonResponse = JSON.parse(responseBody);
 
-        if (
-          Array.isArray(jsonResponse.errors) &&
-          jsonResponse.errors.length > 0
-        ) {
-          const introspectionDisabled = jsonResponse.errors.some(
-            (error: { message?: string }) => {
-              const message = error.message;
-              return (
-                typeof message === "string" &&
-                (message.toLowerCase().includes("introspection") ||
-                  message.toLowerCase().includes("disabled") ||
-                  message.toLowerCase().includes("not allowed"))
-              );
-            },
-          );
+      if (
+        Array.isArray(jsonResponse.errors) &&
+        jsonResponse.errors.length > 0
+      ) {
+        const introspectionDisabled = jsonResponse.errors.some(
+          (error: { message?: string }) => {
+            const message = error.message;
+            return (
+              typeof message === "string" &&
+              (message.toLowerCase().includes("introspection") ||
+                message.toLowerCase().includes("disabled") ||
+                message.toLowerCase().includes("not allowed"))
+            );
+          },
+        );
 
-          if (introspectionDisabled === true) {
-            return { kind: "Ok", value: { supportsIntrospection: false } };
-          }
-
-          const errorMessages = (
-            jsonResponse.errors as Array<{ message?: string }>
-          )
-            .map((e) => e.message ?? "Unknown error")
-            .join(", ");
-          return {
-            kind: "Error",
-            error: `GraphQL error: ${errorMessages}`,
-          };
+        if (introspectionDisabled === true) {
+          return { kind: "Ok", value: { supportsIntrospection: false } };
         }
 
-        if (
-          jsonResponse.data !== undefined &&
-          jsonResponse.data.__schema !== undefined
-        ) {
-          const schema = this.parseIntrospectionResult(
-            jsonResponse.data.__schema as IntrospectionSchema,
-          );
-          (
-            schema as GraphQLSchema & { rawIntrospection?: unknown }
-          ).rawIntrospection = jsonResponse.data;
-          return { kind: "Ok", value: { supportsIntrospection: true, schema } };
-        }
+        const errorMessages = (
+          jsonResponse.errors as Array<{ message?: string }>
+        )
+          .map((e) => e.message ?? "Unknown error")
+          .join(", ");
+        return {
+          kind: "Error",
+          error: `GraphQL error: ${errorMessages}`,
+        };
+      }
 
-        if (jsonResponse.data !== undefined) {
-          return {
-            kind: "Error",
-            error:
-              "GraphQL endpoint responded but introspection is disabled or not available.",
-          };
-        }
+      if (
+        jsonResponse.data !== undefined &&
+        jsonResponse.data.__schema !== undefined
+      ) {
+        const schema = this.parseIntrospectionResult(
+          jsonResponse.data.__schema as IntrospectionSchema,
+        );
+        (
+          schema as GraphQLSchema & { rawIntrospection?: unknown }
+        ).rawIntrospection = jsonResponse.data;
+        return { kind: "Ok", value: { supportsIntrospection: true, schema } };
+      }
 
+      if (jsonResponse.data !== undefined) {
         return {
           kind: "Error",
           error:
-            "Endpoint returned JSON but it's not a valid GraphQL response.",
+            "GraphQL endpoint responded but introspection is disabled or not available.",
         };
-      } catch (parseError) {
-        const preview = responseBody.substring(0, 100);
-        return { kind: "Error", error: `Invalid JSON response: ${preview}...` };
       }
+
+      return {
+        kind: "Error",
+        error: "Endpoint returned JSON but it's not a valid GraphQL response.",
+      };
+    } catch (parseError) {
+      const preview = responseBody.substring(0, 100);
+      return { kind: "Error", error: `Invalid JSON response: ${preview}...` };
+    }
   }
 
   private parseIntrospectionResult(

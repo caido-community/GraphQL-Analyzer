@@ -69,12 +69,9 @@ const checkPendingNavigation = async () => {
       const updatedStorage = { ...storage };
       delete updatedStorage["graphql-analyzer-navigate-to"];
       delete updatedStorage["graphql-analyzer-navigate-timestamp"];
-      await sdk.storage.set(
-        updatedStorage as unknown as Record<string, never>,
-      );
+      await sdk.storage.set(updatedStorage as unknown as Record<string, never>);
     }
-  } catch (error) {
-    void 0;
+  } catch {
   }
 };
 

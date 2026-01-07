@@ -19,14 +19,12 @@ export function useAttackSessions() {
 
   const saveAttackSessions = async () => {
     try {
-      const currentStorage = (sdk.storage.get() as Record<string, unknown>) ??
-        {};
+      const currentStorage =
+        (sdk.storage.get() as Record<string, unknown>) ?? {};
       currentStorage.attackSessions = attackSessions.value;
       currentStorage.selectedAttackSessionId = selectedAttackSessionId.value;
 
-      await sdk.storage.set(
-        currentStorage as unknown as Record<string, never>,
-      );
+      await sdk.storage.set(currentStorage as unknown as Record<string, never>);
     } catch (error) {
       sdk.window.showToast("Failed to save attack sessions", {
         variant: "error",
@@ -64,7 +62,8 @@ export function useAttackSessions() {
       ) {
         selectedAttackSessionId.value = stored.selectedAttackSessionId;
       } else if (attackSessions.value.length > 0) {
-        selectedAttackSessionId.value = attackSessions.value[0]?.id ?? undefined;
+        selectedAttackSessionId.value =
+          attackSessions.value[0]?.id ?? undefined;
       } else {
         selectedAttackSessionId.value = undefined;
       }
@@ -88,7 +87,7 @@ export function useAttackSessions() {
     updates: Partial<AttackSession>,
   ) => {
     const index = attackSessions.value.findIndex((s) => s.id === sessionId);
-    if (index !== -1 && attackSessions.value[index] !== undefined) {
+    if (index !== -1) {
       const existing = attackSessions.value[index];
       if (existing !== undefined) {
         attackSessions.value[index] = {
@@ -129,4 +128,3 @@ export function useAttackSessions() {
     renameAttackSession,
   };
 }
-

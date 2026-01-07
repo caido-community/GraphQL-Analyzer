@@ -159,7 +159,7 @@ export function useScanning(
           result.value.schema !== undefined
         ) {
           const sessionData = {
-            id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
             title: getDomainName(scanUrl.value.trim()),
             url: scanUrl.value.trim(),
             schema: result.value.schema,
@@ -179,7 +179,7 @@ export function useScanning(
           currentStorage.selectedExplorerSessionId = sessionData.id;
 
           const activityData = {
-            id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
             title: `Schema scan: ${sessionData.title}`,
             url: sessionData.url,
             description: "Successfully scanned GraphQL schema",
@@ -199,7 +199,9 @@ export function useScanning(
             currentStorage as unknown as Record<string, never>,
           );
           loadRecentSessions();
-          window.dispatchEvent(new CustomEvent("graphql-analyzer-sessions-updated"));
+          window.dispatchEvent(
+            new CustomEvent("graphql-analyzer-sessions-updated"),
+          );
 
           sdk.window.showToast("Schema scanned successfully!", {
             variant: "success",
@@ -214,7 +216,7 @@ export function useScanning(
           }, 800);
         } else {
           const activityData: DashboardActivity = {
-            id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
             title: `Scan attempted: ${getDomainName(scanUrl.value.trim())}`,
             url: scanUrl.value.trim(),
             description: "GraphQL endpoint found but introspection is disabled",
@@ -234,7 +236,9 @@ export function useScanning(
             currentStorage as unknown as Record<string, never>,
           );
           loadRecentSessions();
-          window.dispatchEvent(new CustomEvent("graphql-analyzer-sessions-updated"));
+          window.dispatchEvent(
+            new CustomEvent("graphql-analyzer-sessions-updated"),
+          );
 
           sdk.window.showToast(
             "GraphQL endpoint detected, but introspection is disabled. Cannot explore schema.",
@@ -257,9 +261,13 @@ export function useScanning(
   const selectSession = async (session: DashboardActivity) => {
     if (session.type === "attack") {
       if (navigateTo !== undefined) {
-        const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
-        currentStorage["graphql-analyzer-navigate-to-attack"] = session.attackSessionId ?? "";
-        await sdk.storage.set(currentStorage as unknown as Record<string, never>);
+        const currentStorage =
+          (sdk.storage.get() as Record<string, unknown>) ?? {};
+        currentStorage["graphql-analyzer-navigate-to-attack"] =
+          session.attackSessionId ?? "";
+        await sdk.storage.set(
+          currentStorage as unknown as Record<string, never>,
+        );
         navigateTo("Attacks");
       }
       return;
@@ -411,7 +419,9 @@ export function useScanning(
           currentStorage as unknown as Record<string, never>,
         );
         loadRecentSessions();
-        window.dispatchEvent(new CustomEvent("graphql-analyzer-sessions-updated"));
+        window.dispatchEvent(
+          new CustomEvent("graphql-analyzer-sessions-updated"),
+        );
 
         sdk.window.showToast("Schema scanned successfully!", {
           variant: "success",
@@ -446,7 +456,9 @@ export function useScanning(
           currentStorage as unknown as Record<string, never>,
         );
         loadRecentSessions();
-        window.dispatchEvent(new CustomEvent("graphql-analyzer-sessions-updated"));
+        window.dispatchEvent(
+          new CustomEvent("graphql-analyzer-sessions-updated"),
+        );
 
         sdk.window.showToast(
           "GraphQL endpoint detected, but introspection is disabled. Cannot explore schema.",
@@ -480,9 +492,14 @@ export function useScanning(
         }
       | undefined;
 
-    const pendingRequestId = storage?.["graphql-analyzer-context-scan-request-id"];
+    const pendingRequestId =
+      storage?.["graphql-analyzer-context-scan-request-id"];
 
-    if (pendingRequestId !== undefined && pendingRequestId !== null && pendingRequestId !== "") {
+    if (
+      pendingRequestId !== undefined &&
+      pendingRequestId !== null &&
+      pendingRequestId !== ""
+    ) {
       await handleContextScanRequest({
         detail: { requestId: pendingRequestId },
       } as CustomEvent);

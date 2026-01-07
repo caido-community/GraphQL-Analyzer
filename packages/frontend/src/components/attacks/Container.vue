@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import Card from "primevue/card";
+import Checkbox from "primevue/checkbox";
 import ProgressBar from "primevue/progressbar";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
@@ -17,7 +18,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { AttackTab } from "@/components/attacks";
 import AttackConfiguration from "@/components/attacks/AttackConfiguration.vue";
 import AttackResultsTable from "@/components/attacks/AttackResultsTable.vue";
-import AttackVectors from "@/components/attacks/AttackVectors.vue";
 import TargetSelection from "@/components/attacks/TargetSelection.vue";
 import { CodeEditor } from "@/components/common";
 import type { ExplorerSession } from "@/components/Explorer/useSessions";
@@ -159,8 +159,8 @@ const targetUrl = computed(() => {
         const path = request.path ?? "/graphql";
         return `${protocol}://${request.host}${portPart}${path}`;
       }
-    } catch (error) {
-      void 0;
+    } catch {
+      return "";
     }
   }
 
@@ -177,13 +177,6 @@ const canExecuteAttack = computed(() => {
     targetUrl.value.trim() !== "" &&
     selectedAttacks.value.length > 0
   );
-});
-
-const selectedSession = computed(() => {
-  if (selectedSessionId.value === undefined) {
-    return undefined;
-  }
-  return sessions.value.find((s) => s.id === selectedSessionId.value);
 });
 
 const selectedAttackSession = computed(() => {
@@ -328,6 +321,15 @@ const toggleSelectAll = () => {
   }
 };
 
+const toggleAttack = (attackType: AttackType) => {
+  const index = selectedAttacks.value.indexOf(attackType);
+  if (index > -1) {
+    selectedAttacks.value.splice(index, 1);
+  } else {
+    selectedAttacks.value.push(attackType);
+  }
+};
+
 const loadSessions = () => {
   try {
     const stored = sdk.storage.get() as
@@ -394,7 +396,7 @@ const loadAttackSessions = () => {
       ) {
         selectedAttackSessionId.value = stored.selectedAttackSessionId;
       } else {
-        selectedAttackSessionId.value = undefined; // Don't auto-select first session
+        selectedAttackSessionId.value = undefined;
       }
     } else {
       attackSessions.value = [];
@@ -406,19 +408,68 @@ const loadAttackSessions = () => {
   }
 };
 
-const createAttackSession = async (config: AttackConfig): Promise<AttackSession> => {
+const createAttackSession = async (
+  config: AttackConfig,
+): Promise<AttackSession> => {
   const now = new Date();
   let domain = "Unknown";
-  
+  let requestId: string | undefined = undefined;
+
   if (config.targetType === "request" && config.selectedRequestData) {
     const requestData = config.selectedRequestData as SelectedRequest;
     if (requestData?.host !== undefined && requestData.host !== "") {
       domain = requestData.host;
     } else if (requestData?.id !== undefined) {
+      requestId = requestData.id;
       try {
-        const requestInfoResult = await sdk.backend.getRequestInfo(requestData.id);
+        const requestInfoResult = await sdk.backend.getRequestInfo(
+          requestData.id,
+        );
         if (requestInfoResult.kind === "Ok") {
           domain = requestInfoResult.value.host;
+        }
+      } catch {
+        domain = "Unknown";
+      }
+    }
+  } else if (config.targetType === "session" && config.sessionId !== undefined) {
+    const session = sessions.value.find((s) => s.id === config.sessionId);
+    if (session !== undefined) {
+      if (session.requestId !== undefined) {
+        requestId = session.requestId;
+        try {
+          const requestInfoResult = await sdk.backend.getRequestInfo(
+            session.requestId,
+          );
+          if (requestInfoResult.kind === "Ok") {
+            domain = requestInfoResult.value.host;
+          }
+        } catch {
+          try {
+            if (session.url && !session.url.startsWith("request:")) {
+              domain = new URL(session.url).hostname;
+            } else {
+              domain = session.title.split(" (")[0] || "Unknown";
+            }
+          } catch {
+            domain = session.title.split(" (")[0] || "Unknown";
+          }
+        }
+      } else {
+        try {
+          if (session.url && !session.url.startsWith("request:")) {
+            domain = new URL(session.url).hostname;
+          } else {
+            domain = session.title.split(" (")[0] || "Unknown";
+          }
+        } catch {
+          domain = session.title.split(" (")[0] || "Unknown";
+        }
+      }
+    } else {
+      try {
+        if (config.targetUrl && !config.targetUrl.startsWith("request:")) {
+          domain = new URL(config.targetUrl).hostname;
         }
       } catch {
         domain = "Unknown";
@@ -434,9 +485,22 @@ const createAttackSession = async (config: AttackConfig): Promise<AttackSession>
     }
   }
 
+  if (requestId === undefined && config.requestId !== undefined) {
+    requestId = config.requestId;
+  }
+
+  let title: string;
+  if (domain === "Unknown" && requestId === undefined) {
+    title = "New Attack Session";
+  } else if (requestId !== undefined) {
+    title = `${domain} (${requestId.substring(0, 8)})`;
+  } else {
+    title = domain;
+  }
+
   return {
-    id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-    title: domain,
+    id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+    title: title,
     targetUrl: config.targetUrl || "",
     config: config,
     results: [],
@@ -534,7 +598,7 @@ const deleteAttackSession = (sessionId: string) => {
     attackSessions.value.splice(index, 1);
 
     if (selectedAttackSessionId.value === sessionId) {
-      selectedAttackSessionId.value = undefined; // Don't auto-select another session
+      selectedAttackSessionId.value = undefined;
       attackResults.value = [];
       selectedResult.value = undefined;
       requestEditor.value = undefined;
@@ -548,34 +612,24 @@ const deleteAttackSession = (sessionId: string) => {
 
 const createNewAttackSession = async (showToast = true) => {
   let config: AttackConfig;
-  let title = "New Attack Session";
   let targetUrl = "";
 
-  if (useSelectedRequest.value === true && selectedRequest.value !== undefined) {
+  if (
+    useSelectedRequest.value === true &&
+    selectedRequest.value !== undefined
+  ) {
     const request = selectedRequest.value;
     targetUrl = request.url ?? "";
     if (targetUrl === "" && request.host !== undefined) {
       const protocol = request.port === 443 ? "https" : "http";
-      const portPart = request.port === 80 || request.port === 443 ? "" : `:${request.port ?? 80}`;
+      const portPart =
+        request.port === 80 || request.port === 443
+          ? ""
+          : `:${request.port ?? 80}`;
       const path = request.path ?? "/graphql";
       targetUrl = `${protocol}://${request.host}${portPart}${path}`;
     }
 
-    let domain = "Unknown";
-    if (request.host !== undefined && request.host !== "") {
-      domain = request.host;
-    } else if (request.id !== undefined) {
-      try {
-        const requestInfoResult = await sdk.backend.getRequestInfo(request.id);
-        if (requestInfoResult.kind === "Ok") {
-          domain = requestInfoResult.value.host;
-        }
-      } catch {
-        domain = "Unknown";
-      }
-    }
-
-    title = domain;
     config = {
       targetUrl: targetUrl,
       attackTypes: selectedAttacks.value,
@@ -587,12 +641,6 @@ const createNewAttackSession = async (showToast = true) => {
     };
   } else if (useCustomUrl.value === true && customUrl.value.trim() !== "") {
     targetUrl = customUrl.value.trim();
-    try {
-      const urlObj = new URL(targetUrl);
-      title = urlObj.hostname;
-    } catch {
-      title = "Custom URL";
-    }
     config = {
       targetUrl: targetUrl,
       attackTypes: selectedAttacks.value,
@@ -602,19 +650,21 @@ const createNewAttackSession = async (showToast = true) => {
       targetType: "custom",
     };
   } else {
-    const session = sessions.value.find((s) => s.id === selectedSessionId.value);
-    if (session !== undefined) {
-      targetUrl = session.url;
-      title = session.title;
-      config = {
-        targetUrl: targetUrl,
-        attackTypes: selectedAttacks.value,
-        maxDepth: maxDepth.value,
-        maxComplexity: 50,
-        batchSize: batchSize.value,
-        targetType: "session",
-        sessionId: session.id,
-      };
+    const session = sessions.value.find(
+      (s) => s.id === selectedSessionId.value,
+    );
+      if (session !== undefined) {
+        targetUrl = session.url;
+        config = {
+          targetUrl: targetUrl,
+          attackTypes: selectedAttacks.value,
+          maxDepth: maxDepth.value,
+          maxComplexity: 50,
+          batchSize: batchSize.value,
+          targetType: "session",
+          sessionId: session.id,
+          requestId: session.requestId,
+        };
     } else {
       config = {
         targetUrl: "",
@@ -656,7 +706,7 @@ const executeAttacks = async () => {
   attackCancelled.value = false;
   attackProgress.value = 0;
   attackResults.value = [];
-  selectedResult.value = undefined; // Clear previous selection
+  selectedResult.value = undefined;
 
   try {
     const headersObj: Record<string, string> = {};
@@ -668,15 +718,34 @@ const executeAttacks = async () => {
 
     let originalHeaders: Record<string, string> | undefined = undefined;
     let useOriginalHeaders = false;
+    let sessionRequestId: string | undefined = undefined;
 
+    if (
+      !useSelectedRequest.value &&
+      !useCustomUrl.value &&
+      selectedSessionId.value !== undefined
+    ) {
+      const session = sessions.value.find(
+        (s) => s.id === selectedSessionId.value,
+      );
+      if (session !== undefined && session.requestId !== undefined) {
+        sessionRequestId = session.requestId;
+      }
+    }
     if (
       useSelectedRequest.value === true &&
       selectedRequest.value !== undefined
     ) {
       if (selectedRequest.value.id !== undefined) {
         try {
-          const requestResult = await sdk.backend.getRequestInfo(selectedRequest.value.id);
-          if (requestResult.kind === "Ok" && selectedRequest.value.raw !== undefined && selectedRequest.value.raw !== "") {
+          const requestResult = await sdk.backend.getRequestInfo(
+            selectedRequest.value.id,
+          );
+          if (
+            requestResult.kind === "Ok" &&
+            selectedRequest.value.raw !== undefined &&
+            selectedRequest.value.raw !== ""
+          ) {
             useOriginalHeaders = true;
             originalHeaders = {};
 
@@ -707,7 +776,9 @@ const executeAttacks = async () => {
               ) {
                 const colonIndex = trimmedLine.indexOf(":");
                 const headerName = trimmedLine.substring(0, colonIndex).trim();
-                const headerValue = trimmedLine.substring(colonIndex + 1).trim();
+                const headerValue = trimmedLine
+                  .substring(colonIndex + 1)
+                  .trim();
                 if (
                   headerName !== "" &&
                   headerValue !== "" &&
@@ -772,17 +843,26 @@ const executeAttacks = async () => {
     }
 
     let finalTargetUrl = targetUrl.value;
-    if (useSelectedRequest.value === true && selectedRequest.value !== undefined) {
-      if (selectedRequest.value.url !== undefined && selectedRequest.value.url !== "" && !selectedRequest.value.url.startsWith("request:")) {
+    if (
+      useSelectedRequest.value === true &&
+      selectedRequest.value !== undefined
+    ) {
+      if (
+        selectedRequest.value.url !== undefined &&
+        selectedRequest.value.url !== "" &&
+        !selectedRequest.value.url.startsWith("request:")
+      ) {
         finalTargetUrl = selectedRequest.value.url;
       } else if (selectedRequest.value.id !== undefined) {
         try {
-          const requestInfoResult = await sdk.backend.getRequestInfo(selectedRequest.value.id);
+          const requestInfoResult = await sdk.backend.getRequestInfo(
+            selectedRequest.value.id,
+          );
           if (requestInfoResult.kind === "Ok") {
             finalTargetUrl = requestInfoResult.value.url;
           }
         } catch {
-          void 0;
+          finalTargetUrl = targetUrl.value;
         }
       }
     }
@@ -805,9 +885,12 @@ const executeAttacks = async () => {
       selectedRequestData: useSelectedRequest.value
         ? selectedRequest.value
         : undefined,
-      requestId: useSelectedRequest.value && selectedRequest.value?.id !== undefined
-        ? selectedRequest.value.id
-        : undefined,
+      requestId:
+        useSelectedRequest.value && selectedRequest.value?.id !== undefined
+          ? selectedRequest.value.id
+          : sessionRequestId !== undefined
+            ? sessionRequestId
+            : undefined,
     };
 
     const sessionResult = await sdk.backend.startGraphQLAttacks(config);
@@ -828,15 +911,61 @@ const executeAttacks = async () => {
 
     if (currentSession !== undefined) {
       let domain = "Unknown";
+      let requestId: string | undefined = config.requestId;
+
       if (config.targetType === "request" && config.selectedRequestData) {
         const requestData = config.selectedRequestData as SelectedRequest;
         if (requestData?.host !== undefined && requestData.host !== "") {
           domain = requestData.host;
         } else if (requestData?.id !== undefined) {
+          requestId = requestData.id;
           try {
-            const requestInfoResult = await sdk.backend.getRequestInfo(requestData.id);
+            const requestInfoResult = await sdk.backend.getRequestInfo(
+              requestData.id,
+            );
             if (requestInfoResult.kind === "Ok") {
               domain = requestInfoResult.value.host;
+            }
+          } catch {
+            domain = "Unknown";
+          }
+        }
+      } else if (config.targetType === "session" && config.sessionId !== undefined) {
+        const session = sessions.value.find((s) => s.id === config.sessionId);
+        if (session !== undefined && session.requestId !== undefined) {
+          requestId = session.requestId;
+          try {
+            const requestInfoResult = await sdk.backend.getRequestInfo(
+              session.requestId,
+            );
+            if (requestInfoResult.kind === "Ok") {
+              domain = requestInfoResult.value.host;
+            }
+          } catch {
+            try {
+              if (session.url && !session.url.startsWith("request:")) {
+                domain = new URL(session.url).hostname;
+              } else {
+                domain = session.title.split(" (")[0] || "Unknown";
+              }
+            } catch {
+              domain = session.title.split(" (")[0] || "Unknown";
+            }
+          }
+        } else if (session !== undefined) {
+          try {
+            if (session.url && !session.url.startsWith("request:")) {
+              domain = new URL(session.url).hostname;
+            } else {
+              domain = session.title.split(" (")[0] || "Unknown";
+            }
+          } catch {
+            domain = session.title.split(" (")[0] || "Unknown";
+          }
+        } else {
+          try {
+            if (config.targetUrl && !config.targetUrl.startsWith("request:")) {
+              domain = new URL(config.targetUrl).hostname;
             }
           } catch {
             domain = "Unknown";
@@ -851,9 +980,19 @@ const executeAttacks = async () => {
           domain = "Unknown";
         }
       }
+
+      let title: string;
+      if (domain === "Unknown" && requestId === undefined) {
+        title = "New Attack Session";
+      } else if (requestId !== undefined) {
+        title = `${domain} (${requestId.substring(0, 8)})`;
+      } else {
+        title = domain;
+      }
+
       attackSession = {
         ...currentSession,
-        title: domain,
+        title: title,
         targetUrl: config.targetUrl,
         config: config,
         status: "running",
@@ -916,8 +1055,7 @@ const cancelAttack = async () => {
   if (currentAttackSessionId.value !== undefined) {
     try {
       await sdk.backend.cancelAttackSession(currentAttackSessionId.value);
-    } catch (error) {
-      void 0;
+    } catch {
     }
   }
 
@@ -926,7 +1064,9 @@ const cancelAttack = async () => {
   stopAttackPolling();
 
   if (currentActiveAttackId.value !== undefined) {
-    const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+    const session = attackSessions.value.find(
+      (s) => s.id === currentActiveAttackId.value,
+    );
     if (session !== undefined) {
       session.status = "cancelled";
       session.completedAt = new Date();
@@ -1006,8 +1146,7 @@ const mountSDKEditors = async () => {
       ) {
         requestEditor.value.destroy();
       }
-    } catch (e) {
-      void 0;
+    } catch {
     }
     requestEditor.value = undefined;
     requestEditorView = undefined;
@@ -1021,8 +1160,7 @@ const mountSDKEditors = async () => {
       ) {
         responseEditor.value.destroy();
       }
-    } catch (e) {
-      void 0;
+    } catch {
     }
     responseEditor.value = undefined;
     responseEditorView = undefined;
@@ -1229,39 +1367,10 @@ const sendToReplay = async (result: AttackResult) => {
   }
 };
 
-const getFindingSeverityClass = (findings: AttackResult["findings"]) => {
-  if (findings.some((f) => f.severity === "critical"))
-    return "bg-red-600 text-red-100";
-  if (findings.some((f) => f.severity === "high"))
-    return "bg-red-500 text-red-100";
-  if (findings.some((f) => f.severity === "medium"))
-    return "bg-yellow-500 text-yellow-100";
-  if (findings.some((f) => f.severity === "low"))
-    return "bg-blue-500 text-blue-100";
-  return "bg-gray-500 text-gray-100";
-};
-
 const getAttackTypeLabel = (attackType: string) => {
   return (
     availableAttacks.find((a) => a.value === attackType)?.label ?? attackType
   );
-};
-
-const formatDate = (date: Date): string => {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins} min ago`;
-
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString();
 };
 
 const handleContextAttack = async (event: CustomEvent) => {
@@ -1307,7 +1416,9 @@ const handleAttackProgress = async (event: CustomEvent) => {
     attackResults.value = results;
 
     if (currentActiveAttackId.value !== undefined) {
-      const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+      const session = attackSessions.value.find(
+        (s) => s.id === currentActiveAttackId.value,
+      );
       if (session !== undefined) {
         session.results = results;
         session.status = status.isComplete === true ? "completed" : "running";
@@ -1333,7 +1444,9 @@ const handleAttackProgress = async (event: CustomEvent) => {
       );
 
       if (currentActiveAttackId.value !== undefined) {
-        const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+        const session = attackSessions.value.find(
+          (s) => s.id === currentActiveAttackId.value,
+        );
         if (session !== undefined) {
           session.completedAt = new Date();
           session.status = "completed";
@@ -1354,7 +1467,7 @@ const handleAttackProgress = async (event: CustomEvent) => {
   }
 };
 
-const handleAttackComplete = (event: CustomEvent) => {
+const handleAttackComplete = async (event: CustomEvent) => {
   const { sessionId, totalFindings, criticalFindings } = event.detail;
 
   if (sessionId === currentAttackSessionId.value) {
@@ -1362,13 +1475,15 @@ const handleAttackComplete = (event: CustomEvent) => {
     attackProgress.value = 100;
 
     if (currentActiveAttackId.value !== undefined) {
-      const session = attackSessions.value.find((s) => s.id === currentActiveAttackId.value);
+      const session = attackSessions.value.find(
+        (s) => s.id === currentActiveAttackId.value,
+      );
       if (session !== undefined) {
         session.completedAt = new Date();
         session.status = "completed";
         session.totalFindings = totalFindings ?? 0;
         session.criticalFindings = criticalFindings ?? 0;
-        saveAttackSessions();
+        await saveAttackSessions();
       }
       currentActiveAttackId.value = undefined;
     }
@@ -1395,7 +1510,11 @@ onMounted(async () => {
   const attackSessionId = storageService.get<string>(
     "graphql-analyzer-navigate-to-attack",
   );
-  if (attackSessionId !== undefined && attackSessionId !== null && attackSessionId !== "") {
+  if (
+    attackSessionId !== undefined &&
+    attackSessionId !== null &&
+    attackSessionId !== ""
+  ) {
     await storageService.remove("graphql-analyzer-navigate-to-attack");
 
     nextTick(() => {
@@ -1411,7 +1530,11 @@ onMounted(async () => {
   const storedRequestId = storageService.get<string>(
     "graphql-analyzer-context-attack-request-id",
   );
-  if (storedRequestId !== undefined && storedRequestId !== null && storedRequestId !== "") {
+  if (
+    storedRequestId !== undefined &&
+    storedRequestId !== null &&
+    storedRequestId !== ""
+  ) {
     const requestInfoResult = await sdk.backend.getRequestInfo(storedRequestId);
     if (requestInfoResult.kind === "Ok") {
       selectedRequest.value = {
@@ -1442,7 +1565,7 @@ onMounted(async () => {
           (s) =>
             s.status === "running" &&
             s.createdAt.getTime() >=
-              new Date(Date.now() - 5 * 60 * 1000).getTime(), // Within last 5 minutes
+              new Date(Date.now() - 5 * 60 * 1000).getTime(),
         );
 
         if (attackSession) {
@@ -1649,9 +1772,10 @@ export default {
                         "
                       >
                         <Checkbox
-                          v-model="selectedAttacks"
-                          :value="attack.value"
+                          :model-value="selectedAttacks.includes(attack.value)"
+                          :binary="true"
                           :input-id="`attack-${attack.value}`"
+                          @update:model-value="toggleAttack(attack.value)"
                         />
                         <div class="flex-1">
                           <label
@@ -1787,13 +1911,13 @@ export default {
                   :min-size="25"
                   class="overflow-hidden"
                 >
-                      <AttackResultsTable
-                        :table-data="attackResultsTableData"
-                        :selected-result="selectedResult"
-                        @select-result="selectResult"
-                        @create-finding="createFindingFromResult"
-                        @send-to-replay="sendToReplay"
-                      ></AttackResultsTable>
+                  <AttackResultsTable
+                    :table-data="attackResultsTableData"
+                    :selected-result="selectedResult"
+                    @select-result="selectResult"
+                    @create-finding="createFindingFromResult"
+                    @send-to-replay="sendToReplay"
+                  ></AttackResultsTable>
                 </SplitterPanel>
 
                 <!-- Details Panel -->

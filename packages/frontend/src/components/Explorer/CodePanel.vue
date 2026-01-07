@@ -45,7 +45,9 @@ const openInVoyager = async () => {
 const sendToAttacker = async () => {
   if (props.selectedSession === undefined) return;
 
-  const requestId = props.selectedSession?.requestId ?? props.selectedSession?.url?.replace("request:", "");
+  const requestId =
+    props.selectedSession?.requestId ??
+    props.selectedSession?.url?.replace("request:", "");
   if (requestId === undefined || requestId === null || requestId === "") {
     sdk.window.showToast("No request ID available", { variant: "error" });
     return;

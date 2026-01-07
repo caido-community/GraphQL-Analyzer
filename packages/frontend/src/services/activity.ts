@@ -16,12 +16,13 @@ export class ActivityService {
     try {
       const domain = this.getDomainName(targetUrl);
       const attackTypesList = attackTypes.join(", ");
-      const title = requestId
-        ? `Attack run on ${domain} (${requestId.substring(0, 8)})`
-        : `Attack run on ${domain}`;
+      const title =
+        requestId !== undefined && requestId !== null && requestId !== ""
+          ? `Attack run on ${domain} (${requestId.substring(0, 8)})`
+          : `Attack run on ${domain}`;
 
       const activityData = {
-        id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+        id: Date.now().toString(36) + Math.random().toString(36).substring(2),
         title: title,
         url: targetUrl,
         description: `GraphQL attacks: ${attackTypesList}`,
@@ -63,8 +64,7 @@ export class ActivityService {
       await this.sdk.storage.set(
         currentStorage as unknown as Record<string, never>,
       );
-    } catch (error) {
-      void 0;
+    } catch {
     }
   }
 

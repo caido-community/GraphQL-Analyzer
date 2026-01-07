@@ -28,7 +28,8 @@ export const useCodeFormatter = (selectedSession: {
     }
 
     try {
-      const maxDepth = storageService.get<number>("graphql-analyzer-max-depth") ?? 5;
+      const maxDepth =
+        storageService.get<number>("graphql-analyzer-max-depth") ?? 3;
       const generatedQuery = await sdk.backend.generateGraphQLQuery(
         field,
         type,
