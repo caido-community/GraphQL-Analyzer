@@ -4,9 +4,6 @@ import Card from "primevue/card";
 import type { GraphQLSchema } from "shared";
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
-import { useSDK } from "@/plugins/sdk";
-import { createStorageService } from "@/services/storage";
-
 import Header from "./Header.vue";
 import Minimap from "./Minimap.vue";
 import NavigationSidebar from "./NavigationSidebar.vue";
@@ -19,6 +16,9 @@ import { useVoyagerNavigation } from "./useVoyagerNavigation";
 import { useVoyagerVisualization } from "./useVoyagerVisualization";
 import { useVoyagerZoom } from "./useVoyagerZoom";
 import ZoomControls from "./ZoomControls.vue";
+
+import { useSDK } from "@/plugins/sdk";
+import { createStorageService } from "@/services/storage";
 
 defineProps<{
   navigateTo?: (
@@ -122,7 +122,10 @@ watch(
   { deep: true },
 );
 
-const saveTransform = (sessionId: string | undefined, transform: d3.ZoomTransform) => {
+const saveTransform = (
+  sessionId: string | undefined,
+  transform: d3.ZoomTransform,
+) => {
   if (sessionId === undefined || isRestoringTransform.value) return;
   const isIdentity =
     transform.x === 0 && transform.y === 0 && transform.k === 1;
@@ -209,15 +212,19 @@ const restoreSessionData = async (sessionId: string, showToasts = false) => {
   }
 };
 
-watch(selectedSessionId, async (newSessionId, oldSessionId) => {
-  if (newSessionId !== undefined && newSessionId !== oldSessionId) {
-    await restoreSessionData(newSessionId);
-  } else if (newSessionId === undefined) {
-    currentSchema.value = undefined;
-    cachedD3Data.value = undefined;
-    highlightedNodeId.value = undefined;
-  }
-}, { immediate: false });
+watch(
+  selectedSessionId,
+  async (newSessionId, oldSessionId) => {
+    if (newSessionId !== undefined && newSessionId !== oldSessionId) {
+      await restoreSessionData(newSessionId);
+    } else if (newSessionId === undefined) {
+      currentSchema.value = undefined;
+      cachedD3Data.value = undefined;
+      highlightedNodeId.value = undefined;
+    }
+  },
+  { immediate: false },
+);
 
 onMounted(async () => {
   await loadSessions();
@@ -281,7 +288,9 @@ onUnmounted(() => {
             </div>
           </div>
           <div
-            v-else-if="selectedSession === undefined || cachedD3Data === undefined"
+            v-else-if="
+              selectedSession === undefined || cachedD3Data === undefined
+            "
             class="h-full flex items-center justify-center"
           >
             <div class="text-center text-surface-500">

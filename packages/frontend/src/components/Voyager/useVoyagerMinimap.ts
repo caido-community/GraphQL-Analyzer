@@ -88,13 +88,13 @@ export function useVoyagerMinimap(
         const newY = -newViewportY * currentTransform.value.k;
 
         mainSvg.transition().duration(0).call(
-          // @ts-expect-error - D3.js transition type compatibility
+          // @ts-expect-error D3.js transition type compatibility
           currentZoom.value.transform,
           d3.zoomIdentity.translate(newX, newY).scale(currentTransform.value.k),
         );
       });
 
-    // @ts-expect-error - D3.js drag behavior type compatibility
+    // @ts-expect-error D3.js drag behavior type compatibility
     minimapRect.call(drag);
     minimapRect.style("cursor", "move");
   };

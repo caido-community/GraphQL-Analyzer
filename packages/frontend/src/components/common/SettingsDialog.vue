@@ -74,7 +74,10 @@ watch(
         class:
           'p-4 border-t border-surface-700 flex justify-end gap-2 bg-surface-800',
       },
-      closeButton: { class: 'text-surface-300 hover:text-surface-100 w-8 h-8 flex items-center justify-center' },
+      closeButton: {
+        class:
+          'text-surface-300 hover:text-surface-100 w-8 h-8 flex items-center justify-center',
+      },
       closeButtonIcon: { class: 'text-surface-300 text-lg' },
     }"
   >
@@ -86,9 +89,7 @@ watch(
     <div class="p-4 bg-surface-900 space-y-4">
       <div>
         <div class="flex items-center gap-2 mb-2">
-          <label class="text-sm font-medium text-surface-200"
-            >Max Depth</label
-          >
+          <label class="text-sm font-medium text-surface-200">Max Depth</label>
           <i
             v-tooltip="
               'Recommended to keep max depth under 10. Increasing this value will generate longer GraphQL queries with more nested fields, which may impact performance and readability.'
@@ -104,7 +105,8 @@ watch(
           :pt="{
             root: { class: 'w-full' },
             input: {
-              class: 'bg-surface-800 border-surface-700 text-surface-100 w-full',
+              class:
+                'bg-surface-800 border-surface-700 text-surface-100 w-full',
             },
           }"
         />

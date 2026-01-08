@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { type API, type RequestFull } from "@caido/sdk-frontend";
 import Button from "primevue/button";
+import InputText from "primevue/inputtext";
 import TabPanel from "primevue/tabpanel";
 import TabView from "primevue/tabview";
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import CodeEditor from "../components/common/CodeEditor.vue";
 import { createStorageService } from "../services/storage";
@@ -20,19 +21,33 @@ const storageService = createStorageService(
 
 const editableQuery = ref("");
 const editableVariables = ref("{}");
+const editableOperationName = ref("");
 const queryValidationErrors = ref<string[]>([]);
 const activeTab = ref(0);
+
+const originalQuery = ref("");
+const originalVariables = ref("{}");
+const originalOperationName = ref("");
+
+const isReplayTab = computed(() => window.location.hash.includes("/replay"));
 
 const parseHttpRaw = (raw: string) => {
   if (raw === undefined || raw === "") return null;
 
-  const parts = raw.split("\r\n\r\n");
-  if (parts.length < 2) return null;
+  let parts = raw.split("\r\n\r\n");
+  if (parts.length < 2) {
+    parts = raw.split("\n\n");
+    if (parts.length < 2) return null;
+  }
 
   const headerSection = parts[0];
-  const body = parts.slice(1).join("\r\n\r\n");
+  const separator = raw.includes("\r\n") ? "\r\n\r\n" : "\n\n";
+  const body = parts.slice(1).join(separator);
 
-  const lines = headerSection?.split("\r\n") ?? [];
+  let lines = headerSection?.split("\r\n") ?? [];
+  if (lines.length === 1 && lines[0] === headerSection) {
+    lines = headerSection?.split("\n") ?? [];
+  }
   const firstLine = lines[0];
   const methodMatch =
     firstLine !== undefined ? firstLine.match(/^(\w+)\s+/) : null;
@@ -58,9 +73,72 @@ const parseHttpRaw = (raw: string) => {
   return { method, headers, body };
 };
 
-const parsedHttp = computed(() => {
-  return parseHttpRaw(props.request.raw);
+const getRawData = computed((): string => {
+  if (isReplayTab.value) {
+    const editor = props.sdk.window?.getActiveEditor?.();
+    if (editor !== undefined && editor !== null) {
+      const editorView = editor.getEditorView();
+      if (editorView !== undefined && editorView !== null) {
+        const raw = editorView.state.doc.toString();
+        if (raw !== undefined && raw !== null && raw !== "") return raw;
+      }
+    }
+  }
+
+  if (props.request?.raw) {
+    return props.request.raw;
+  }
+
+  return "";
 });
+
+const parsedHttp = computed(() => {
+  const raw = getRawData.value;
+  if (!raw || raw.trim() === "") return null;
+  const parsed = parseHttpRaw(raw);
+  return parsed;
+});
+
+const isGraphQLQuery = (text: string): boolean => {
+  if (!text || text.trim() === "") return false;
+
+  const trimmed = text.trim();
+
+  const operationStartPattern =
+    /^\s*(query|mutation|subscription|fragment)\s+[\w]+\s*[({]/i;
+  if (operationStartPattern.test(trimmed)) {
+    return true;
+  }
+
+  const operationWithoutNamePattern =
+    /^\s*(query|mutation|subscription)\s*[({]/i;
+  if (operationWithoutNamePattern.test(trimmed)) {
+    return true;
+  }
+
+  const directQueryPattern = /^\s*{\s*\w/i;
+  if (directQueryPattern.test(trimmed)) {
+    return true;
+  }
+
+  const hasOperationKeyword =
+    /(query|mutation|subscription|fragment)\s+[\w]+/i.test(trimmed);
+  const hasGraphQLStructure = trimmed.includes("{") && trimmed.includes("}");
+  const hasFieldLikePattern = /\w+\s*[:{(]/.test(trimmed);
+
+  if (hasOperationKeyword && hasGraphQLStructure && hasFieldLikePattern) {
+    return true;
+  }
+
+  if (hasGraphQLStructure && hasFieldLikePattern && trimmed.length > 10) {
+    const graphQLFieldPattern = /\w+\s*\{|\w+\s*\(|\w+\s*:/;
+    if (graphQLFieldPattern.test(trimmed)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const graphqlData = computed(() => {
   const parsed = parsedHttp.value;
@@ -68,18 +146,29 @@ const graphqlData = computed(() => {
     return null;
   }
 
+  const body = parsed.body.trim();
+  if (!body) return null;
+
   try {
-    const bodyJson = JSON.parse(parsed.body) as {
+    const bodyJson = JSON.parse(body) as {
       query?: string;
       variables?: unknown;
       operationName?: string;
     };
-    if (bodyJson.query !== undefined && typeof bodyJson.query === "string") {
+    if (
+      bodyJson.query !== undefined &&
+      typeof bodyJson.query === "string" &&
+      bodyJson.query.trim() !== ""
+    ) {
       return bodyJson;
     }
+
+    if (isGraphQLQuery(body)) {
+      return { query: body };
+    }
   } catch {
-    if (/\b(query|mutation|subscription)\s*[{[]/.test(parsed.body)) {
-      return { query: parsed.body };
+    if (isGraphQLQuery(body)) {
+      return { query: body };
     }
   }
 
@@ -87,8 +176,9 @@ const graphqlData = computed(() => {
 });
 
 const isActuallyGraphQL = computed(() => {
+  if (props.request === undefined || props.request === null) return false;
   const parsed = parsedHttp.value;
-  if (!parsed) return false;
+  if (parsed === null || parsed === undefined) return false;
 
   return parsed.method === "POST" && graphqlData.value !== null;
 });
@@ -129,28 +219,88 @@ const formatGraphQLQuery = (query: string): string => {
   }
 };
 
-onMounted(() => {
+const initializeData = () => {
   if (graphqlData.value?.query !== undefined) {
     const formatted = formatGraphQLQuery(graphqlData.value.query);
     editableQuery.value = formatted;
+    originalQuery.value = formatted;
   } else {
     editableQuery.value = "";
+    originalQuery.value = "";
   }
 
   if (graphqlData.value?.variables !== undefined) {
     if (graphqlData.value.variables === null) {
       editableVariables.value = "null";
+      originalVariables.value = "null";
     } else {
-      editableVariables.value = JSON.stringify(
-        graphqlData.value.variables,
-        null,
-        2,
-      );
+      const varsStr = JSON.stringify(graphqlData.value.variables, null, 2);
+      editableVariables.value = varsStr;
+      originalVariables.value = varsStr;
     }
   } else {
     editableVariables.value = "{}";
+    originalVariables.value = "{}";
   }
 
+  if (graphqlData.value?.operationName !== undefined) {
+    editableOperationName.value = graphqlData.value.operationName;
+    originalOperationName.value = graphqlData.value.operationName;
+  } else {
+    editableOperationName.value = "";
+    originalOperationName.value = "";
+  }
+
+  if (editableQuery.value) {
+    queryValidationErrors.value = validateQuery(editableQuery.value);
+  }
+};
+
+onMounted(async () => {
+  await nextTick();
+  initializeData();
+});
+
+watch(
+  () => graphqlData.value,
+  (newValue) => {
+    if (newValue) {
+      const currentQuery = formatGraphQLQuery(
+        newValue.query !== undefined && newValue.query !== null
+          ? newValue.query
+          : "",
+      );
+      const currentVars =
+        newValue.variables !== undefined
+          ? newValue.variables === null
+            ? "null"
+            : JSON.stringify(newValue.variables, null, 2)
+          : "{}";
+      const currentOpName =
+        newValue.operationName !== undefined && newValue.operationName !== null
+          ? newValue.operationName
+          : "";
+
+      if (
+        editableQuery.value !== currentQuery ||
+        editableVariables.value !== currentVars ||
+        editableOperationName.value !== currentOpName
+      ) {
+        initializeData();
+      }
+    } else if (editableQuery.value !== "" || editableVariables.value !== "{}") {
+      editableQuery.value = "";
+      editableVariables.value = "{}";
+      editableOperationName.value = "";
+      originalQuery.value = "";
+      originalVariables.value = "{}";
+      originalOperationName.value = "";
+    }
+  },
+  { immediate: true },
+);
+
+watch(editableQuery, () => {
   if (editableQuery.value) {
     queryValidationErrors.value = validateQuery(editableQuery.value);
   }
@@ -291,6 +441,10 @@ const copyQuery = async () => {
 };
 
 const saveToScanner = async () => {
+  if (props.request === undefined || props.request === null) {
+    props.sdk.window.showToast("No request available", { variant: "error" });
+    return;
+  }
   const requestId = props.request.id?.toString();
   if (requestId === undefined) {
     props.sdk.window.showToast("No request ID available", { variant: "error" });
@@ -323,6 +477,10 @@ const saveToScanner = async () => {
 };
 
 const saveToAttacker = async () => {
+  if (props.request === undefined || props.request === null) {
+    props.sdk.window.showToast("No request available", { variant: "error" });
+    return;
+  }
   const requestId = props.request.id?.toString();
   if (requestId === undefined) {
     props.sdk.window.showToast("No request ID available", { variant: "error" });
@@ -353,6 +511,143 @@ const saveToAttacker = async () => {
     variant: "info",
   });
 };
+
+const hasChanges = computed(() => {
+  if (!isReplayTab.value) return false;
+  return (
+    editableQuery.value !== originalQuery.value ||
+    editableVariables.value !== originalVariables.value ||
+    editableOperationName.value !== originalOperationName.value
+  );
+});
+
+const reconstructGraphQLBody = (): string => {
+  const body: {
+    query: string;
+    variables?: unknown;
+    operationName?: string;
+  } = {
+    query: editableQuery.value.trim(),
+  };
+
+  if (
+    editableVariables.value.trim() !== "" &&
+    editableVariables.value !== "null"
+  ) {
+    try {
+      const parsedVars = JSON.parse(editableVariables.value);
+      if (parsedVars !== null && typeof parsedVars === "object") {
+        body.variables = parsedVars;
+      }
+    } catch {
+      props.sdk.window.showToast("Invalid JSON in variables", {
+        variant: "error",
+      });
+      throw new Error("Invalid JSON in variables");
+    }
+  }
+
+  if (editableOperationName.value.trim() !== "") {
+    body.operationName = editableOperationName.value.trim();
+  }
+
+  return JSON.stringify(body);
+};
+
+const reconstructRawHttpRequest = (newBody: string): string => {
+  const parsed = parsedHttp.value;
+  if (
+    parsed === null ||
+    parsed === undefined ||
+    props.request === undefined ||
+    props.request === null
+  ) {
+    throw new Error("Failed to parse HTTP request");
+  }
+
+  const headers = parsed.headers;
+  const method = parsed.method;
+  const path = props.request?.path || "/";
+
+  const headerLines: string[] = [];
+  headerLines.push(`${method} ${path} HTTP/1.1`);
+
+  let hasContentType = false;
+  for (const [key, value] of Object.entries(headers)) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === "content-length") {
+      continue;
+    }
+    if (lowerKey === "content-type") {
+      hasContentType = true;
+    }
+    headerLines.push(`${key}: ${value}`);
+  }
+
+  const bodyBytes = new TextEncoder().encode(newBody);
+  headerLines.push(`Content-Length: ${bodyBytes.length}`);
+  if (!hasContentType) {
+    headerLines.push("Content-Type: application/json");
+  }
+
+  return headerLines.join("\r\n") + "\r\n\r\n" + newBody;
+};
+
+const saveChanges = () => {
+  if (!isReplayTab.value) return;
+  if (!hasChanges.value) return;
+
+  try {
+    if (!editableQuery.value.trim()) {
+      props.sdk.window.showToast("Query cannot be empty", {
+        variant: "error",
+      });
+      return;
+    }
+
+    if (queryValidationErrors.value.length > 0) {
+      props.sdk.window.showToast("Please fix validation errors before saving", {
+        variant: "error",
+      });
+      return;
+    }
+
+    const newBody = reconstructGraphQLBody();
+    const newRaw = reconstructRawHttpRequest(newBody);
+
+    const editor = props.sdk.window?.getActiveEditor?.();
+    if (editor !== undefined && editor !== null) {
+      const editorView = editor.getEditorView();
+      if (editorView !== undefined && editorView !== null) {
+        editorView.dispatch({
+          changes: {
+            from: 0,
+            to: editorView.state.doc.length,
+            insert: newRaw,
+          },
+        });
+
+        originalQuery.value = editableQuery.value;
+        originalVariables.value = editableVariables.value;
+        originalOperationName.value = editableOperationName.value;
+
+        props.sdk.window.showToast("Request updated successfully", {
+          variant: "success",
+        });
+      } else {
+        throw new Error("Editor view not available");
+      }
+    } else {
+      throw new Error("Active editor not available");
+    }
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    props.sdk.window.showToast(`Failed to update request: ${errorMessage}`, {
+      variant: "error",
+    });
+  }
+};
 </script>
 
 <template>
@@ -365,12 +660,22 @@ const saveToAttacker = async () => {
         <div class="flex items-center gap-2 text-surface-300">
           <i class="fas fa-project-diagram text-primary-400"></i>
           <span class="text-sm font-medium"
-            >{{ parsedHttp?.method || "POST" }} {{ request.host
-            }}{{ request.path }}</span
+            >{{ parsedHttp?.method || "POST" }} {{ request?.host || "unknown"
+            }}{{ request?.path || "/" }}</span
           >
         </div>
 
         <div class="flex gap-1">
+          <Button
+            v-if="isReplayTab && hasChanges"
+            v-tooltip="'Save Changes'"
+            icon="fas fa-save"
+            size="small"
+            severity="primary"
+            @click="saveChanges"
+          >
+            Save
+          </Button>
           <Button
             v-tooltip="'Copy Query'"
             icon="fas fa-copy"
@@ -412,6 +717,25 @@ const saveToAttacker = async () => {
           <!-- Query Tab -->
           <TabPanel header="Query" :pt="{ content: { class: 'h-full p-0' } }">
             <div class="h-full flex flex-col p-2">
+              <!-- Operation Name (editable in Replay) -->
+              <div
+                v-if="isReplayTab || graphqlData?.operationName"
+                class="mb-2 flex-shrink-0"
+              >
+                <label class="block text-sm font-medium text-surface-200 mb-1">
+                  Operation Name
+                </label>
+                <InputText
+                  v-if="isReplayTab"
+                  v-model="editableOperationName"
+                  class="w-full"
+                  placeholder="Enter operation name (optional)"
+                />
+                <div v-else class="text-sm font-mono text-surface-300">
+                  {{ graphqlData?.operationName || "None" }}
+                </div>
+              </div>
+
               <!-- Validation Errors -->
               <div
                 v-if="queryValidationErrors.length > 0"
@@ -442,7 +766,7 @@ const saveToAttacker = async () => {
                 <CodeEditor
                   :content="editableQuery"
                   language="graphql"
-                  :read-only="true"
+                  :read-only="!isReplayTab"
                   :font-size="12"
                   class="h-full w-full"
                   @update:content="editableQuery = $event"
@@ -473,7 +797,7 @@ const saveToAttacker = async () => {
                   <CodeEditor
                     :content="editableVariables"
                     language="json"
-                    :read-only="true"
+                    :read-only="!isReplayTab"
                     :font-size="12"
                     class="h-full w-full"
                     @update:content="editableVariables = $event"
@@ -570,19 +894,21 @@ const saveToAttacker = async () => {
                     <div>
                       <div class="text-xs text-surface-400 mb-1">Host</div>
                       <div class="font-mono text-surface-100 break-all">
-                        {{ request.host }}
+                        {{ request?.host || "unknown" }}
                       </div>
                     </div>
                     <div>
                       <div class="text-xs text-surface-400 mb-1">Path</div>
                       <div class="font-mono text-surface-100 break-all">
-                        {{ request.path || "/" }}
+                        {{ request?.path || "/" }}
                       </div>
                     </div>
                     <div>
                       <div class="text-xs text-surface-400 mb-1">Port</div>
                       <div class="font-mono text-surface-100">
-                        {{ request.port || (request.port === 443 ? 443 : 80) }}
+                        {{
+                          request?.port || (request?.port === 443 ? 443 : 80)
+                        }}
                       </div>
                     </div>
                   </div>
@@ -644,7 +970,7 @@ const saveToAttacker = async () => {
         <div class="flex items-center gap-3 text-surface-400">
           <span class="flex items-center gap-1">
             <i class="fas fa-server"></i>
-            {{ request.host }}
+            {{ request?.host || "unknown" }}
           </span>
           <span v-if="editableQuery" class="flex items-center gap-1">
             <i class="fas fa-code"></i>

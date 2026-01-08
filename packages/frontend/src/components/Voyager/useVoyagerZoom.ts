@@ -16,7 +16,7 @@ export function useVoyagerZoom(
     svg
       .transition()
       .duration(300)
-      // @ts-expect-error - D3.js transition type compatibility
+      // @ts-expect-error D3.js transition type compatibility
       .call(currentZoom.value.scaleBy, 1.3);
   };
 
@@ -24,7 +24,7 @@ export function useVoyagerZoom(
     if (voyagerContainer.value === undefined || currentZoom.value === undefined)
       return;
     const svg = d3.select(voyagerContainer.value).select("svg");
-    // @ts-expect-error - D3.js transition type compatibility
+    // @ts-expect-error D3.js transition type compatibility
     svg.transition().duration(300).call(currentZoom.value.scaleBy, 0.7);
   };
 
@@ -35,7 +35,7 @@ export function useVoyagerZoom(
     svg
       .transition()
       .duration(500)
-      // @ts-expect-error - D3.js transition type compatibility
+      // @ts-expect-error D3.js transition type compatibility
       .call(currentZoom.value.transform, d3.zoomIdentity);
   };
 
@@ -75,7 +75,7 @@ export function useVoyagerZoom(
 
     const svg = d3.select(voyagerContainer.value).select("svg");
     svg.transition().duration(750).call(
-      // @ts-expect-error - D3.js transition type compatibility
+      // @ts-expect-error D3.js transition type compatibility
       currentZoom.value.transform,
       d3.zoomIdentity.translate(translateX, translateY).scale(scale),
     );
@@ -101,7 +101,7 @@ export function useVoyagerZoom(
     const translateY = centerY - nodeY * scale;
 
     svg.transition().duration(750).call(
-      // @ts-expect-error - D3.js transition type compatibility
+      // @ts-expect-error D3.js transition type compatibility
       currentZoom.value.transform,
       d3.zoomIdentity.translate(translateX, translateY).scale(scale),
     );

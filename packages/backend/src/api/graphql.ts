@@ -131,14 +131,13 @@ export class GraphQLService {
       const originalRaw = originalRequest.getRaw().toText();
       const lines = originalRaw.split(/\r?\n/);
       const originalHeaders: Record<string, string> = {};
+      let originalBody = "";
 
       let inHeaders = false;
+      let bodyStartIndex = -1;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (line === undefined || line === "") {
-          if (inHeaders === true) break;
-          continue;
-        }
+        if (line === undefined) continue;
 
         const trimmedLine = line.trim();
 
@@ -147,7 +146,10 @@ export class GraphQLService {
           continue;
         }
 
-        if (inHeaders === true && trimmedLine === "") break;
+        if (inHeaders === true && trimmedLine === "") {
+          bodyStartIndex = i + 1;
+          break;
+        }
 
         if (
           inHeaders === true &&
@@ -165,6 +167,10 @@ export class GraphQLService {
             originalHeaders[headerName] = headerValue;
           }
         }
+      }
+
+      if (bodyStartIndex > 0 && bodyStartIndex < lines.length) {
+        originalBody = lines.slice(bodyStartIndex).join("\r\n").trim();
       }
 
       const headers: Record<string, string> = {
@@ -197,6 +203,37 @@ export class GraphQLService {
           value === "undefined"
         ) {
           delete headers[key];
+        }
+      }
+
+      const method = originalRequest.getMethod() || "POST";
+
+      if (originalBody && originalBody.trim() !== "") {
+        try {
+          const originalSpec = new RequestSpec(originalUrl);
+          originalSpec.setMethod(method);
+
+          for (const [name, value] of Object.entries(headers)) {
+            if (value) {
+              originalSpec.setHeader(name, value);
+            }
+          }
+
+          originalSpec.setBody(originalBody);
+
+          const originalResult = await this.sdk.requests.send(originalSpec);
+          const originalProcessed =
+            this.processIntrospectionResponse(originalResult);
+
+          if (
+            originalProcessed.kind === "Ok" &&
+            originalProcessed.value.supportsIntrospection === true &&
+            originalProcessed.value.schema !== undefined
+          ) {
+            return originalProcessed;
+          }
+        } catch {
+          // Ignore errors when trying original request
         }
       }
 

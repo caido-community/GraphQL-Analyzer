@@ -250,7 +250,9 @@ export function useVoyagerVisualization(
       }
 
       if (showToasts) {
-        sdk.window.showToast("Loading the graph for you...", { variant: "info" });
+        sdk.window.showToast("Loading the graph for you...", {
+          variant: "info",
+        });
       }
 
       d3.select(voyagerContainer.value).selectAll("*").remove();

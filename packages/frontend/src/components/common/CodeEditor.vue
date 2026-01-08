@@ -20,6 +20,7 @@ const emit = defineEmits<{
 
 const editorRef = ref<HTMLDivElement>();
 const editorView = ref<EditorView>();
+const isInternalUpdate = ref(false);
 
 const getLanguageExtension = () => {
   switch (props.language) {
@@ -120,7 +121,7 @@ const createEditor = () => {
   if (!props.readOnly) {
     extensions.push(
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
+        if (update.docChanged && !isInternalUpdate.value) {
           emit("update:content", update.state.doc.toString());
         }
       }),
@@ -139,11 +140,31 @@ const createEditor = () => {
 };
 
 watch(
-  () => [props.content, props.language],
+  () => props.language,
   () => {
     createEditor();
   },
-  { deep: true },
+);
+
+watch(
+  () => props.content,
+  (newContent) => {
+    if (editorView.value === undefined) return;
+
+    const currentContent = editorView.value.state.doc.toString();
+    if (currentContent !== newContent) {
+      isInternalUpdate.value = true;
+      const transaction = editorView.value.state.update({
+        changes: {
+          from: 0,
+          to: editorView.value.state.doc.length,
+          insert: newContent,
+        },
+      });
+      editorView.value.dispatch(transaction);
+      isInternalUpdate.value = false;
+    }
+  },
 );
 
 onMounted(() => {

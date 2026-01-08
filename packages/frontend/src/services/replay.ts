@@ -262,7 +262,7 @@ export class GraphQLReplayService {
           name: sessionName,
         });
       } catch {
-        // Ignore rename errors
+        // Ignore replay SDK errors if not available
       }
     } catch (error) {
       throw new Error(
