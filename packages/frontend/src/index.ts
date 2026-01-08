@@ -1,5 +1,6 @@
 import { Classic } from "@caido/primevue";
 import PrimeVue from "primevue/config";
+import Tooltip from "primevue/tooltip";
 import { createApp } from "vue";
 
 import { SDKPlugin } from "./plugins/sdk";
@@ -15,6 +16,8 @@ export const init = (sdk: FrontendSDK) => {
     unstyled: true,
     pt: Classic,
   });
+
+  app.directive("tooltip", Tooltip);
 
   app.use(SDKPlugin, sdk);
 
@@ -58,6 +61,7 @@ export const init = (sdk: FrontendSDK) => {
       },
     });
   } catch {
+    // Ignore replay SDK errors if not available
   }
 
   sdk.search.addRequestViewMode({

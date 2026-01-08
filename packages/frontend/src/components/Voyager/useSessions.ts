@@ -1,8 +1,8 @@
 import { computed, ref } from "vue";
 
-import { useSDK } from "@/plugins/sdk";
-
 import type { ExplorerSession } from "./types";
+
+import { useSDK } from "@/plugins/sdk";
 
 export function useVoyagerSessions() {
   const sdk = useSDK();
@@ -10,7 +10,9 @@ export function useVoyagerSessions() {
   const selectedSessionId = ref<string | undefined>(undefined);
 
   const selectedSession = computed(() =>
-    sessions.value.find((s: ExplorerSession) => s.id === selectedSessionId.value),
+    sessions.value.find(
+      (s: ExplorerSession) => s.id === selectedSessionId.value,
+    ),
   );
 
   const introspectionSessions = computed(() =>
@@ -92,8 +94,6 @@ export function useVoyagerSessions() {
     const currentStorage = (sdk.storage.get() as Record<string, unknown>) ?? {};
     currentStorage["voyager-selected-session-id"] = sessionId;
     await sdk.storage.set(currentStorage as unknown as Record<string, never>);
-
-    sdk.window.showToast("Loading the graph for you...", { variant: "info" });
   };
 
   const handleStorageChange = async () => {
@@ -141,4 +141,3 @@ export function useVoyagerSessions() {
     handleStorageChange,
   };
 }
-

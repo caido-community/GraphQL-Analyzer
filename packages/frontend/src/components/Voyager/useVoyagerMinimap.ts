@@ -104,4 +104,3 @@ export function useVoyagerMinimap(
     setupMinimapDrag,
   };
 }
-

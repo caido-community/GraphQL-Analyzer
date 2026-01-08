@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import * as d3 from "d3";
+import type * as d3 from "d3";
 import { onMounted, ref } from "vue";
 
 import type { D3Node } from "./types";
@@ -100,4 +100,3 @@ onMounted(() => {
     </div>
   </div>
 </template>
-

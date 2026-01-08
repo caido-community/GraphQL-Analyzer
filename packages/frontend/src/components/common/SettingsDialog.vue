@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from "primevue/button";
-import Card from "primevue/card";
 import Dialog from "primevue/dialog";
 import InputNumber from "primevue/inputnumber";
 import { computed, ref, watch } from "vue";
@@ -19,7 +18,7 @@ const emit = defineEmits<{
 const sdk = useSDK();
 const storageService = createStorageService(sdk);
 
-const DEFAULT_MAX_DEPTH = 3;
+const DEFAULT_MAX_DEPTH = 5;
 
 const maxDepth = ref(DEFAULT_MAX_DEPTH);
 const isVisible = computed({
@@ -34,8 +33,8 @@ const loadSettings = () => {
 };
 
 const saveSettings = async () => {
-  if (maxDepth.value < 1 || maxDepth.value > 10) {
-    sdk.window.showToast("Max Depth must be between 1 and 10", {
+  if (maxDepth.value < 1 || maxDepth.value > 250) {
+    sdk.window.showToast("Max Depth must be between 1 and 250", {
       variant: "error",
     });
     return;
@@ -65,7 +64,7 @@ watch(
     modal
     :style="{ width: '500px' }"
     :pt="{
-      root: { class: 'p-0' },
+      root: { class: 'p-0 rounded-lg overflow-hidden' },
       header: {
         class:
           'p-4 border-b border-surface-700 bg-surface-800 flex items-center justify-between',
@@ -75,66 +74,46 @@ watch(
         class:
           'p-4 border-t border-surface-700 flex justify-end gap-2 bg-surface-800',
       },
-      closeButton: { class: 'text-surface-300 hover:text-surface-100' },
-      closeButtonIcon: { class: 'text-surface-300' },
+      closeButton: { class: 'text-surface-300 hover:text-surface-100 w-8 h-8 flex items-center justify-center' },
+      closeButtonIcon: { class: 'text-surface-300 text-lg' },
     }"
   >
     <template #header>
-      <span class="text-lg font-semibold text-surface-100">Settings</span>
+      <div class="flex items-center justify-between w-full">
+        <span class="text-lg font-semibold text-surface-100">Settings</span>
+      </div>
     </template>
-    <template #content>
-      <Card
-        :pt="{
-          root: { class: 'bg-transparent border-0 shadow-none' },
-          body: { class: 'p-0' },
-          content: { class: 'p-0' },
-        }"
-      >
-        <template #content>
-          <div class="space-y-4">
-            <div>
-              <div class="flex items-center gap-2 mb-2">
-                <label class="text-sm font-medium text-surface-200"
-                  >Max Depth</label
-                >
-                <i
-                  v-tooltip="
-                    'Recommended to keep max depth under 5. Increasing this value will generate longer GraphQL queries with more nested fields, which may impact performance and readability.'
-                  "
-                  class="fas fa-eye text-surface-400 cursor-help hover:text-surface-300 transition-colors"
-                />
-              </div>
-              <div class="flex items-center gap-3">
-                <InputNumber
-                  v-model="maxDepth"
-                  :min="1"
-                  :max="10"
-                  show-buttons
-                  class="w-32"
-                  :pt="{
-                    input: {
-                      class:
-                        'bg-surface-800 border-surface-700 text-surface-100',
-                    },
-                    buttonGroup: { class: 'bg-surface-800 border-surface-700' },
-                    incrementButton: {
-                      class: 'text-surface-300 hover:text-surface-100',
-                    },
-                    decrementButton: {
-                      class: 'text-surface-300 hover:text-surface-100',
-                    },
-                  }"
-                />
-              </div>
-              <p class="text-xs text-surface-400 mt-2">
-                Controls the maximum nesting depth for generated GraphQL
-                queries. Lower values produce shorter, more readable queries.
-              </p>
-            </div>
-          </div>
-        </template>
-      </Card>
-    </template>
+    <div class="p-4 bg-surface-900 space-y-4">
+      <div>
+        <div class="flex items-center gap-2 mb-2">
+          <label class="text-sm font-medium text-surface-200"
+            >Max Depth</label
+          >
+          <i
+            v-tooltip="
+              'Recommended to keep max depth under 10. Increasing this value will generate longer GraphQL queries with more nested fields, which may impact performance and readability.'
+            "
+            class="fas fa-info-circle text-surface-400 cursor-help hover:text-surface-300 transition-colors"
+          />
+        </div>
+        <InputNumber
+          v-model="maxDepth"
+          :min="1"
+          :max="250"
+          class="w-full"
+          :pt="{
+            root: { class: 'w-full' },
+            input: {
+              class: 'bg-surface-800 border-surface-700 text-surface-100 w-full',
+            },
+          }"
+        />
+        <p class="text-xs text-surface-400 mt-2">
+          Controls the maximum nesting depth for generated GraphQL queries.
+          Lower values produce shorter, more readable queries.
+        </p>
+      </div>
+    </div>
     <template #footer>
       <Button
         label="Reset"

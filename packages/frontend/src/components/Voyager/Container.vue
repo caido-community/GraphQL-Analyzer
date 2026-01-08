@@ -4,18 +4,21 @@ import Card from "primevue/card";
 import type { GraphQLSchema } from "shared";
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
+import { useSDK } from "@/plugins/sdk";
+import { createStorageService } from "@/services/storage";
+
 import Header from "./Header.vue";
 import Minimap from "./Minimap.vue";
 import NavigationSidebar from "./NavigationSidebar.vue";
 import SessionSelector from "./SessionSelector.vue";
-import ZoomControls from "./ZoomControls.vue";
 import type { D3Link, D3Node, ExplorerSession } from "./types";
+import { useVoyagerSessions } from "./useSessions";
 import { useVoyagerHighlight } from "./useVoyagerHighlight";
 import { useVoyagerMinimap } from "./useVoyagerMinimap";
 import { useVoyagerNavigation } from "./useVoyagerNavigation";
-import { useVoyagerSessions } from "./useSessions";
 import { useVoyagerVisualization } from "./useVoyagerVisualization";
 import { useVoyagerZoom } from "./useVoyagerZoom";
+import ZoomControls from "./ZoomControls.vue";
 
 defineProps<{
   navigateTo?: (
@@ -37,6 +40,10 @@ const searchTerm = ref("");
 const debouncedSearchTerm = ref("");
 const searchDebounceTimer = ref<number | undefined>(undefined);
 const isNavExpanded = ref(true);
+const isRestoringTransform = ref(false);
+
+const sdk = useSDK();
+const storageService = createStorageService(sdk);
 
 const {
   sessions,
@@ -48,11 +55,8 @@ const {
   handleStorageChange,
 } = useVoyagerSessions();
 
-const {
-  highlightedNodeId,
-  updateNodeStyles,
-  toggleNodeHighlight,
-} = useVoyagerHighlight(voyagerContainer, cachedD3Data);
+const { highlightedNodeId, updateNodeStyles, toggleNodeHighlight } =
+  useVoyagerHighlight(voyagerContainer, cachedD3Data);
 
 const { minimapViewBox, setupMinimapDrag } = useVoyagerMinimap(
   minimapSvg,
@@ -69,17 +73,13 @@ const { focusOnNode, zoomIn, zoomOut, resetZoom, fitToView } = useVoyagerZoom(
   cachedD3Data,
 );
 
-const {
-  expandedSections,
-  filteredItems,
-  toggleSection,
-  onNavItemClick,
-} = useVoyagerNavigation(
-  currentSchema,
-  debouncedSearchTerm,
-  cachedD3Data,
-  focusOnNode,
-);
+const { expandedSections, filteredItems, toggleSection, onNavItemClick } =
+  useVoyagerNavigation(
+    currentSchema,
+    debouncedSearchTerm,
+    cachedD3Data,
+    focusOnNode,
+  );
 
 const { parseSchemaToD3, loadVoyagerVisualization } = useVoyagerVisualization(
   voyagerContainer,
@@ -103,12 +103,17 @@ watch(searchTerm, (newValue: string) => {
 
 watch(debouncedSearchTerm, () => {
   if (selectedSession.value !== undefined && cachedD3Data.value !== undefined) {
-    loadVoyagerVisualization();
+    const savedTransform = getSavedTransform(selectedSessionId.value);
+    isRestoringTransform.value = true;
+    loadVoyagerVisualization(savedTransform, false);
+    nextTick(() => {
+      isRestoringTransform.value = false;
+    });
   }
 });
 
 watch(
-  [selectedSession, cachedD3Data, currentTransform],
+  [selectedSession, cachedD3Data],
   () => {
     nextTick(() => {
       setupMinimapDrag();
@@ -116,6 +121,44 @@ watch(
   },
   { deep: true },
 );
+
+const saveTransform = (sessionId: string | undefined, transform: d3.ZoomTransform) => {
+  if (sessionId === undefined || isRestoringTransform.value) return;
+  const isIdentity =
+    transform.x === 0 && transform.y === 0 && transform.k === 1;
+  if (isIdentity) return;
+
+  const transformData = {
+    x: transform.x,
+    y: transform.y,
+    k: transform.k,
+  };
+  storageService.set(`voyager-transform-${sessionId}`, transformData);
+};
+
+const getSavedTransform = (
+  sessionId: string | undefined,
+): d3.ZoomTransform | undefined => {
+  if (sessionId === undefined) return undefined;
+  const saved = storageService.get<{ x: number; y: number; k: number }>(
+    `voyager-transform-${sessionId}`,
+  );
+  if (
+    saved !== undefined &&
+    typeof saved.x === "number" &&
+    typeof saved.y === "number" &&
+    typeof saved.k === "number"
+  ) {
+    return d3.zoomIdentity.translate(saved.x, saved.y).scale(saved.k);
+  }
+  return undefined;
+};
+
+watch(currentTransform, (newTransform) => {
+  if (selectedSessionId.value !== undefined && !isRestoringTransform.value) {
+    saveTransform(selectedSessionId.value, newTransform);
+  }
+});
 
 const handleSelectSession = async (sessionId: string) => {
   await selectSession(sessionId);
@@ -127,11 +170,14 @@ const handleSelectSession = async (sessionId: string) => {
     currentSchema.value = session.schema;
     cachedD3Data.value = parseSchemaToD3(session.schema);
     highlightedNodeId.value = undefined;
+    const savedTransform = getSavedTransform(sessionId);
+    isRestoringTransform.value = true;
     await nextTick();
-    loadVoyagerVisualization();
+    loadVoyagerVisualization(savedTransform, true);
+    await nextTick();
+    isRestoringTransform.value = false;
   }
 };
-
 
 const handleMinimapSvgReady = (svg: SVGSVGElement) => {
   minimapSvg.value = svg;
@@ -142,8 +188,43 @@ const handleMinimapSvgReady = (svg: SVGSVGElement) => {
   });
 };
 
+const restoreSessionData = async (sessionId: string, showToasts = false) => {
+  const session = sessions.value.find(
+    (s: ExplorerSession) => s.id === sessionId,
+  );
+  if (session?.schema !== undefined) {
+    currentSchema.value = session.schema;
+    cachedD3Data.value = parseSchemaToD3(session.schema);
+    highlightedNodeId.value = undefined;
+    const savedTransform = getSavedTransform(sessionId);
+    isRestoringTransform.value = true;
+    await nextTick();
+    loadVoyagerVisualization(savedTransform, showToasts);
+    await nextTick();
+    isRestoringTransform.value = false;
+  } else {
+    currentSchema.value = undefined;
+    cachedD3Data.value = undefined;
+    highlightedNodeId.value = undefined;
+  }
+};
+
+watch(selectedSessionId, async (newSessionId, oldSessionId) => {
+  if (newSessionId !== undefined && newSessionId !== oldSessionId) {
+    await restoreSessionData(newSessionId);
+  } else if (newSessionId === undefined) {
+    currentSchema.value = undefined;
+    cachedD3Data.value = undefined;
+    highlightedNodeId.value = undefined;
+  }
+}, { immediate: false });
+
 onMounted(async () => {
   await loadSessions();
+
+  if (selectedSessionId.value !== undefined) {
+    await restoreSessionData(selectedSessionId.value);
+  }
 
   window.addEventListener("storage", handleStorageChange);
   window.addEventListener(
@@ -200,7 +281,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div
-            v-else-if="selectedSession === undefined"
+            v-else-if="selectedSession === undefined || cachedD3Data === undefined"
             class="h-full flex items-center justify-center"
           >
             <div class="text-center text-surface-500">

@@ -19,7 +19,10 @@ defineEmits<{
   "should-show-children": [item: NavItem];
 }>();
 
-const shouldShowChildren = (item: NavItem, expandedSections: Record<string, boolean>): boolean => {
+const shouldShowChildren = (
+  item: NavItem,
+  expandedSections: Record<string, boolean>,
+): boolean => {
   if (
     item.type === "root" &&
     ["Query", "Mutation", "Subscription"].includes(item.name)
@@ -56,20 +59,13 @@ const shouldShowChildren = (item: NavItem, expandedSections: Record<string, bool
     </div>
 
     <div class="flex-1 overflow-y-auto overflow-x-hidden p-2">
-      <div
-        v-for="item in filteredItems"
-        :key="item.name"
-        class="mb-1"
-      >
+      <div v-for="item in filteredItems" :key="item.name" class="mb-1">
         <div
           class="flex items-center justify-between p-2 rounded cursor-pointer hover:bg-surface-700 transition-colors min-w-0"
           :class="{
-            'bg-primary-600':
-              item.type === 'root' && item.name === 'Query',
-            'bg-danger-600':
-              item.type === 'root' && item.name === 'Mutation',
-            'bg-info-600':
-              item.type === 'root' && item.name === 'Subscription',
+            'bg-primary-600': item.type === 'root' && item.name === 'Query',
+            'bg-danger-600': item.type === 'root' && item.name === 'Mutation',
+            'bg-info-600': item.type === 'root' && item.name === 'Subscription',
             'bg-success-600': item.type === 'type',
             'bg-secondary-600': item.type === 'enum',
           }"
@@ -111,7 +107,9 @@ const shouldShowChildren = (item: NavItem, expandedSections: Record<string, bool
         </div>
 
         <div
-          v-if="item.children?.length && shouldShowChildren(item, expandedSections)"
+          v-if="
+            item.children?.length && shouldShowChildren(item, expandedSections)
+          "
           class="ml-6 mt-1"
         >
           <div
@@ -143,4 +141,3 @@ const shouldShowChildren = (item: NavItem, expandedSections: Record<string, bool
     />
   </div>
 </template>
-

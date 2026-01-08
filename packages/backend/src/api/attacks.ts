@@ -319,7 +319,7 @@ export class GraphQLAttackService {
                   break;
                 }
               } catch {
-                void 0;
+                // Ignore parsing errors
               }
             } else if (result.response.getCode() === 400) {
               try {
@@ -343,7 +343,7 @@ export class GraphQLAttackService {
                   break;
                 }
               } catch {
-                void 0;
+                // Ignore parsing errors
               }
             }
           }
@@ -474,7 +474,7 @@ export class GraphQLAttackService {
                 break;
               }
             } catch {
-              void 0;
+              // Ignore parsing errors
             }
           }
         }
@@ -607,10 +607,10 @@ export class GraphQLAttackService {
                   );
                 })
               ) {
-                void 0;
+                // No action needed
               }
             } catch {
-              void 0;
+              // Ignore parsing errors
             }
           }
         }
@@ -714,7 +714,7 @@ export class GraphQLAttackService {
                 }
               }
             } catch {
-              void 0;
+              // Ignore parsing errors
             }
           } else if (result.response.getCode() === 400) {
             try {
@@ -737,7 +737,7 @@ export class GraphQLAttackService {
                 break;
               }
             } catch {
-              void 0;
+              // Ignore parsing errors
             }
           }
         }
@@ -879,7 +879,7 @@ export class GraphQLAttackService {
               }
             }
           } catch {
-            void 0;
+            // Ignore parsing errors
           }
         }
       } catch (error) {

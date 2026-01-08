@@ -22,7 +22,8 @@ defineProps<{
         <div>
           <h3 class="text-lg font-semibold">GraphQL Voyager</h3>
           <p class="text-sm text-surface-300">
-            Interactive exploration of GraphQL schema relationships and structure.
+            Interactive exploration of GraphQL schema relationships and
+            structure.
           </p>
         </div>
         <Button
@@ -35,4 +36,3 @@ defineProps<{
     </template>
   </Card>
 </template>
-

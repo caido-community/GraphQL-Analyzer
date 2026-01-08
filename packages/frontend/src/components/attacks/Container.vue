@@ -432,7 +432,10 @@ const createAttackSession = async (
         domain = "Unknown";
       }
     }
-  } else if (config.targetType === "session" && config.sessionId !== undefined) {
+  } else if (
+    config.targetType === "session" &&
+    config.sessionId !== undefined
+  ) {
     const session = sessions.value.find((s) => s.id === config.sessionId);
     if (session !== undefined) {
       if (session.requestId !== undefined) {
@@ -449,10 +452,20 @@ const createAttackSession = async (
             if (session.url && !session.url.startsWith("request:")) {
               domain = new URL(session.url).hostname;
             } else {
-              domain = session.title.split(" (")[0] || "Unknown";
+              const titlePart = session.title.split(" (")[0];
+              domain =
+                titlePart !== undefined &&
+                titlePart !== "" &&
+                titlePart !== null
+                  ? titlePart
+                  : "Unknown";
             }
           } catch {
-            domain = session.title.split(" (")[0] || "Unknown";
+            const titlePart = session.title.split(" (")[0];
+            domain =
+              titlePart !== undefined && titlePart !== "" && titlePart !== null
+                ? titlePart
+                : "Unknown";
           }
         }
       } else {
@@ -460,10 +473,18 @@ const createAttackSession = async (
           if (session.url && !session.url.startsWith("request:")) {
             domain = new URL(session.url).hostname;
           } else {
-            domain = session.title.split(" (")[0] || "Unknown";
+            const titlePart = session.title.split(" (")[0];
+            domain =
+              titlePart !== undefined && titlePart !== "" && titlePart !== null
+                ? titlePart
+                : "Unknown";
           }
         } catch {
-          domain = session.title.split(" (")[0] || "Unknown";
+          const titlePart = session.title.split(" (")[0];
+          domain =
+            titlePart !== undefined && titlePart !== "" && titlePart !== null
+              ? titlePart
+              : "Unknown";
         }
       }
     } else {
@@ -653,18 +674,18 @@ const createNewAttackSession = async (showToast = true) => {
     const session = sessions.value.find(
       (s) => s.id === selectedSessionId.value,
     );
-      if (session !== undefined) {
-        targetUrl = session.url;
-        config = {
-          targetUrl: targetUrl,
-          attackTypes: selectedAttacks.value,
-          maxDepth: maxDepth.value,
-          maxComplexity: 50,
-          batchSize: batchSize.value,
-          targetType: "session",
-          sessionId: session.id,
-          requestId: session.requestId,
-        };
+    if (session !== undefined) {
+      targetUrl = session.url;
+      config = {
+        targetUrl: targetUrl,
+        attackTypes: selectedAttacks.value,
+        maxDepth: maxDepth.value,
+        maxComplexity: 50,
+        batchSize: batchSize.value,
+        targetType: "session",
+        sessionId: session.id,
+        requestId: session.requestId,
+      };
     } else {
       config = {
         targetUrl: "",
@@ -930,7 +951,10 @@ const executeAttacks = async () => {
             domain = "Unknown";
           }
         }
-      } else if (config.targetType === "session" && config.sessionId !== undefined) {
+      } else if (
+        config.targetType === "session" &&
+        config.sessionId !== undefined
+      ) {
         const session = sessions.value.find((s) => s.id === config.sessionId);
         if (session !== undefined && session.requestId !== undefined) {
           requestId = session.requestId;
@@ -946,10 +970,22 @@ const executeAttacks = async () => {
               if (session.url && !session.url.startsWith("request:")) {
                 domain = new URL(session.url).hostname;
               } else {
-                domain = session.title.split(" (")[0] || "Unknown";
+                const titlePart = session.title.split(" (")[0];
+                domain =
+                  titlePart !== undefined &&
+                  titlePart !== "" &&
+                  titlePart !== null
+                    ? titlePart
+                    : "Unknown";
               }
             } catch {
-              domain = session.title.split(" (")[0] || "Unknown";
+              const titlePart = session.title.split(" (")[0];
+              domain =
+                titlePart !== undefined &&
+                titlePart !== "" &&
+                titlePart !== null
+                  ? titlePart
+                  : "Unknown";
             }
           }
         } else if (session !== undefined) {
@@ -957,10 +993,20 @@ const executeAttacks = async () => {
             if (session.url && !session.url.startsWith("request:")) {
               domain = new URL(session.url).hostname;
             } else {
-              domain = session.title.split(" (")[0] || "Unknown";
+              const titlePart = session.title.split(" (")[0];
+              domain =
+                titlePart !== undefined &&
+                titlePart !== "" &&
+                titlePart !== null
+                  ? titlePart
+                  : "Unknown";
             }
           } catch {
-            domain = session.title.split(" (")[0] || "Unknown";
+            const titlePart = session.title.split(" (")[0];
+            domain =
+              titlePart !== undefined && titlePart !== "" && titlePart !== null
+                ? titlePart
+                : "Unknown";
           }
         } else {
           try {
@@ -1056,6 +1102,7 @@ const cancelAttack = async () => {
     try {
       await sdk.backend.cancelAttackSession(currentAttackSessionId.value);
     } catch {
+      // Ignore cancellation errors
     }
   }
 
@@ -1147,6 +1194,7 @@ const mountSDKEditors = async () => {
         requestEditor.value.destroy();
       }
     } catch {
+      // Ignore destroy errors
     }
     requestEditor.value = undefined;
     requestEditorView = undefined;
@@ -1161,6 +1209,7 @@ const mountSDKEditors = async () => {
         responseEditor.value.destroy();
       }
     } catch {
+      // Ignore destroy errors
     }
     responseEditor.value = undefined;
     responseEditorView = undefined;

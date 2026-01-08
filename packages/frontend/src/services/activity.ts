@@ -65,6 +65,7 @@ export class ActivityService {
         currentStorage as unknown as Record<string, never>,
       );
     } catch {
+      // Ignore storage errors
     }
   }
 

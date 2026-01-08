@@ -2,10 +2,10 @@ import * as d3 from "d3";
 import type { GraphQLField, GraphQLSchema, GraphQLType } from "shared";
 import type { Ref } from "vue";
 
-import { useSDK } from "@/plugins/sdk";
-
 import type { D3Link, D3Node } from "./types";
-import { LAYOUT, extractTypeName } from "./types";
+import { extractTypeName, LAYOUT } from "./types";
+
+import { useSDK } from "@/plugins/sdk";
 
 export function useVoyagerVisualization(
   voyagerContainer: Ref<HTMLDivElement | undefined>,
@@ -160,7 +160,7 @@ export function useVoyagerVisualization(
     }
 
     if (schema.enums.length > 0) {
-      let enumX =
+      const enumX =
         nodes.length > 0
           ? Math.max(...nodes.map((n) => n.x + n.width)) + LAYOUT.COLUMN_SPACING
           : 1200;
@@ -238,12 +238,19 @@ export function useVoyagerVisualization(
     return { nodes, links };
   };
 
-  const loadVoyagerVisualization = () => {
+  const loadVoyagerVisualization = (
+    restoreTransform?: d3.ZoomTransform,
+    showToasts = false,
+  ) => {
     if (cachedD3Data.value === undefined) return;
 
     try {
       if (voyagerContainer.value === undefined) {
         throw new Error("Container ref is not available");
+      }
+
+      if (showToasts) {
+        sdk.window.showToast("Loading the graph for you...", { variant: "info" });
       }
 
       d3.select(voyagerContainer.value).selectAll("*").remove();
@@ -270,6 +277,11 @@ export function useVoyagerVisualization(
 
       svg.call(zoom);
       currentZoom.value = zoom;
+
+      if (restoreTransform !== undefined) {
+        svg.call(zoom.transform, restoreTransform);
+        currentTransform.value = restoreTransform;
+      }
 
       svg.on("click", (event: MouseEvent) => {
         const target = event.target as HTMLElement | undefined;
@@ -343,10 +355,7 @@ export function useVoyagerVisualization(
               ? "hsl(var(--c-primary-400))"
               : "hsl(var(--c-surface-400))",
           )
-          .attr(
-            "stroke-width",
-            link.fromRoot === true ? 2.5 : 1.5,
-          )
+          .attr("stroke-width", link.fromRoot === true ? 2.5 : 1.5)
           .attr("fill", "none")
           .attr("opacity", 0.7)
           .attr("marker-end", "url(#arrowhead)")
@@ -540,14 +549,18 @@ export function useVoyagerVisualization(
         });
       }
 
-      sdk.window.showToast(
-        "Graph loaded successfully! Click nodes to highlight parent chains.",
-        { variant: "success" },
-      );
+      if (showToasts) {
+        sdk.window.showToast(
+          "Graph loaded successfully! Click nodes to highlight parent chains.",
+          { variant: "success" },
+        );
+      }
     } catch (error) {
-      sdk.window.showToast(`Failed to load visualization: ${error}`, {
-        variant: "error",
-      });
+      if (showToasts) {
+        sdk.window.showToast(`Failed to load visualization: ${error}`, {
+          variant: "error",
+        });
+      }
     }
   };
 
@@ -556,4 +569,3 @@ export function useVoyagerVisualization(
     loadVoyagerVisualization,
   };
 }
-

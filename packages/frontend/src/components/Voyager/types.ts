@@ -74,4 +74,3 @@ export function extractTypeName(typeString: string): string {
   if (typeString === "") return "";
   return typeString.replace(/[[\]!]/g, "");
 }
-

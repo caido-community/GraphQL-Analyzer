@@ -253,6 +253,7 @@ export class GraphQLReplayService {
           await replaySDK.moveSession(sessionId, collectionId);
         }
       } catch {
+        // Ignore replay SDK errors if not available
       }
 
       try {
@@ -261,6 +262,7 @@ export class GraphQLReplayService {
           name: sessionName,
         });
       } catch {
+        // Ignore rename errors
       }
     } catch (error) {
       throw new Error(

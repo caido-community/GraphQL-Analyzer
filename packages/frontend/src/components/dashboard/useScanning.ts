@@ -159,7 +159,8 @@ export function useScanning(
           result.value.schema !== undefined
         ) {
           const sessionData = {
-            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+            id:
+              Date.now().toString(36) + Math.random().toString(36).substring(2),
             title: getDomainName(scanUrl.value.trim()),
             url: scanUrl.value.trim(),
             schema: result.value.schema,
@@ -179,7 +180,8 @@ export function useScanning(
           currentStorage.selectedExplorerSessionId = sessionData.id;
 
           const activityData = {
-            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+            id:
+              Date.now().toString(36) + Math.random().toString(36).substring(2),
             title: `Schema scan: ${sessionData.title}`,
             url: sessionData.url,
             description: "Successfully scanned GraphQL schema",
@@ -216,7 +218,8 @@ export function useScanning(
           }, 800);
         } else {
           const activityData: DashboardActivity = {
-            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+            id:
+              Date.now().toString(36) + Math.random().toString(36).substring(2),
             title: `Scan attempted: ${getDomainName(scanUrl.value.trim())}`,
             url: scanUrl.value.trim(),
             description: "GraphQL endpoint found but introspection is disabled",

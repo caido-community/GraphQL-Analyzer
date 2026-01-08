@@ -72,6 +72,7 @@ const checkPendingNavigation = async () => {
       await sdk.storage.set(updatedStorage as unknown as Record<string, never>);
     }
   } catch {
+    // Ignore navigation errors
   }
 };
 

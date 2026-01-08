@@ -56,7 +56,9 @@ const updateHeader = (
                 class="w-full"
                 @update:model-value="emit('update:maxDepth', $event ?? 10)"
               />
-              <p class="text-xs text-surface-400 mt-1">For depth-limit attacks</p>
+              <p class="text-xs text-surface-400 mt-1">
+                For depth-limit attacks
+              </p>
             </div>
 
             <div class="flex-1">
@@ -68,7 +70,9 @@ const updateHeader = (
                 class="w-full"
                 @update:model-value="emit('update:batchSize', $event ?? 5)"
               />
-              <p class="text-xs text-surface-400 mt-1">For batch-query attacks</p>
+              <p class="text-xs text-surface-400 mt-1">
+                For batch-query attacks
+              </p>
             </div>
           </div>
 

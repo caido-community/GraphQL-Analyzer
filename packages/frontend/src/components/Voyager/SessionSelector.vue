@@ -61,4 +61,3 @@ defineEmits<{
     </template>
   </Card>
 </template>
-

@@ -49,6 +49,27 @@ const handleCustomUrlInput = (event: Event) => {
     emit("update:customUrl", target.value);
   }
 };
+
+const handleSessionSelect = (value: boolean) => {
+  if (value) {
+    emit("update:useCustomUrl", false);
+    emit("update:useSelectedRequest", false);
+  }
+};
+
+const handleCustomUrlSelect = (value: boolean) => {
+  if (value) {
+    emit("update:useCustomUrl", true);
+    emit("update:useSelectedRequest", false);
+  }
+};
+
+const handleSelectedRequestSelect = (value: boolean) => {
+  if (value) {
+    emit("update:useSelectedRequest", true);
+    emit("update:useCustomUrl", false);
+  }
+};
 </script>
 
 <template>
@@ -71,16 +92,11 @@ const handleCustomUrlInput = (event: Event) => {
               :model-value="!useCustomUrl && !useSelectedRequest"
               :binary="true"
               input-id="target-session"
-              @update:model-value="
-                (value: boolean) => {
-                  if (value) {
-                    emit('update:useCustomUrl', false);
-                    emit('update:useSelectedRequest', false);
-                  }
-                }
-              "
+              @update:model-value="handleSessionSelect"
             />
-            <label for="target-session" class="text-sm font-medium cursor-pointer"
+            <label
+              for="target-session"
+              class="text-sm font-medium cursor-pointer"
               >Use Session</label
             >
           </div>
@@ -90,16 +106,11 @@ const handleCustomUrlInput = (event: Event) => {
               :model-value="useCustomUrl"
               :binary="true"
               input-id="target-custom"
-              @update:model-value="
-                (value: boolean) => {
-                  if (value) {
-                    emit('update:useCustomUrl', true);
-                    emit('update:useSelectedRequest', false);
-                  }
-                }
-              "
+              @update:model-value="handleCustomUrlSelect"
             />
-            <label for="target-custom" class="text-sm font-medium cursor-pointer"
+            <label
+              for="target-custom"
+              class="text-sm font-medium cursor-pointer"
               >Use Custom URL</label
             >
           </div>
@@ -110,14 +121,7 @@ const handleCustomUrlInput = (event: Event) => {
               :binary="true"
               input-id="target-request"
               :disabled="!selectedRequest"
-              @update:model-value="
-                (value: boolean) => {
-                  if (value) {
-                    emit('update:useSelectedRequest', true);
-                    emit('update:useCustomUrl', false);
-                  }
-                }
-              "
+              @update:model-value="handleSelectedRequestSelect"
             />
             <label
               for="target-request"
