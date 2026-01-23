@@ -16,7 +16,7 @@ const copyToClipboard = async (text: string, successMessage: string) => {
 
 const copyGitHubUrl = () => {
   copyToClipboard(
-    "https://github.com/amrelsagaei/GraphQL-Analyzer",
+    "https://github.com/caido-community/GraphQL-Analyzer",
     "GitHub URL copied successfully!",
   );
 };
@@ -325,39 +325,27 @@ const copyTwitter = () => {
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-4">
           <span class="text-sm text-surface-400">GraphQL Analyzer</span>
-          <Button
-            icon="fab fa-github"
-            label="Star on GitHub"
-            severity="secondary"
-            outlined
-            size="small"
-            @click="copyGitHubUrl"
-          />
+          <Button icon="fab fa-github" label="Star on GitHub" severity="secondary" outlined size="small"
+            @click="copyGitHubUrl" />
         </div>
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
-            <span class="text-xs text-surface-500"
-              >Made with <i class="fas fa-heart text-red-400"></i> by</span
-            >
-            <button
-              class="text-xs text-primary-400 hover:text-primary-300 transition-colors cursor-pointer font-medium"
-              @click="copyAuthorWebsite"
-            >
+            <span class="text-xs text-surface-500">Made with <i class="fas fa-heart text-red-400"></i> by</span>
+            <button class="text-xs text-primary-400 hover:text-primary-300 transition-colors cursor-pointer font-medium"
+              @click="copyAuthorWebsite">
               Amr Elsagaei
             </button>
           </div>
           <div class="flex items-center gap-2">
             <button
               class="text-xs text-surface-400 hover:text-primary-400 transition-colors cursor-pointer flex items-center gap-1"
-              @click="copyAuthorEmail"
-            >
+              @click="copyAuthorEmail">
               <i class="fas fa-envelope"></i>
               <span>Email</span>
             </button>
             <button
               class="text-xs text-surface-400 hover:text-primary-400 transition-colors cursor-pointer flex items-center gap-1"
-              @click="copyTwitter"
-            >
+              @click="copyTwitter">
               <i class="fab fa-x-twitter"></i>
               <span>Twitter</span>
             </button>
