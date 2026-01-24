@@ -2,10 +2,12 @@ import type { GraphQLField, GraphQLType, PointOfInterest } from "shared";
 
 import type { ExplorerSession } from "./useSessions";
 
+import type { TreeItem } from "@/components/common/CTree";
+
 export const useTreeData = (selectedSession: {
   value: ExplorerSession | undefined;
 }) => {
-  const getTreeData = () => {
+  const getTreeData = (): TreeItem<{ type: string; content: unknown }>[] => {
     if (!selectedSession.value?.schema) return [];
 
     const schema = selectedSession.value.schema;
@@ -30,162 +32,172 @@ export const useTreeData = (selectedSession: {
       }
     }
 
-    const baseTree: Array<{
-      key: string;
-      label: string;
-      icon: string;
-      children?: Array<{
-        key: string;
-        label: string;
-        icon: string;
-        data?: { type: string; content: unknown };
-        children?: Array<{
-          key: string;
-          label: string;
-          icon: string;
-          data?: { type: string; content: unknown };
-        }>;
-      }>;
-      data?: { type: string; content: unknown };
-    }> = [
-      {
-        key: "graphql",
-        label: `GraphQL (${urlDomain})`,
-        icon: "fas fa-project-diagram",
-        children: [
-          {
-            key: "queries",
-            label: `Queries (${schema.queries.length})`,
-            icon: "fas fa-search",
-            children: schema.queries.map((query: GraphQLField) => ({
-              key: `query-${query.name}`,
-              label: query.name,
-              icon: "fas fa-code",
-              data: { type: "query", content: query as unknown },
-            })),
-          },
-          {
-            key: "mutations",
-            label: `Mutations (${schema.mutations.length})`,
-            icon: "fas fa-edit",
-            children: schema.mutations.map((mutation) => ({
-              key: `mutation-${mutation.name}`,
-              label: mutation.name,
-              icon: "fas fa-code",
-              data: { type: "mutation", content: mutation },
-            })),
-          },
-          {
-            key: "subscriptions",
-            label: `Subscriptions (${schema.subscriptions.length})`,
-            icon: "fas fa-broadcast-tower",
-            children: schema.subscriptions.map(
-              (subscription: GraphQLField) => ({
-                key: `subscription-${subscription.name}`,
-                label: subscription.name,
-                icon: "fas fa-code",
-                data: {
-                  type: "subscription",
-                  content: subscription as unknown,
-                },
-              }),
-            ),
-          },
-        ],
-      },
-    ];
+    const items: TreeItem<{ type: string; content: unknown }>[] = [];
 
-    if (
-      schema.pointsOfInterest !== undefined &&
-      schema.pointsOfInterest.length > 0 &&
-      baseTree[0]?.children !== undefined
-    ) {
-      baseTree[0].children.push({
-        key: "points-of-interest",
+    const rootId = "graphql";
+    items.push({
+      id: rootId,
+      label: `GraphQL (${urlDomain})`,
+      data: { type: "root", content: null },
+      hasChildren: true,
+      parentId: undefined,
+      icon: "fas fa-project-diagram",
+    });
+
+    if (schema.queries.length > 0) {
+      const queriesId = "queries";
+      items.push({
+        id: queriesId,
+        label: `Queries (${schema.queries.length})`,
+        data: { type: "folder", content: null },
+        hasChildren: true,
+        parentId: rootId,
+        icon: "fas fa-search",
+      });
+
+      schema.queries.forEach((query: GraphQLField) => {
+        items.push({
+          id: `query-${query.name}`,
+          label: query.name,
+          data: { type: "query", content: query },
+          hasChildren: false,
+          parentId: queriesId,
+          icon: "fas fa-code",
+        });
+      });
+    }
+
+    if (schema.mutations.length > 0) {
+      const mutationsId = "mutations";
+      items.push({
+        id: mutationsId,
+        label: `Mutations (${schema.mutations.length})`,
+        data: { type: "folder", content: null },
+        hasChildren: true,
+        parentId: rootId,
+        icon: "fas fa-edit",
+      });
+
+      schema.mutations.forEach((mutation) => {
+        items.push({
+          id: `mutation-${mutation.name}`,
+          label: mutation.name,
+          data: { type: "mutation", content: mutation },
+          hasChildren: false,
+          parentId: mutationsId,
+          icon: "fas fa-code",
+        });
+      });
+    }
+
+    if (schema.subscriptions.length > 0) {
+      const subscriptionsId = "subscriptions";
+      items.push({
+        id: subscriptionsId,
+        label: `Subscriptions (${schema.subscriptions.length})`,
+        data: { type: "folder", content: null },
+        hasChildren: true,
+        parentId: rootId,
+        icon: "fas fa-broadcast-tower",
+      });
+
+      schema.subscriptions.forEach((subscription: GraphQLField) => {
+        items.push({
+          id: `subscription-${subscription.name}`,
+          label: subscription.name,
+          data: { type: "subscription", content: subscription },
+          hasChildren: false,
+          parentId: subscriptionsId,
+          icon: "fas fa-code",
+        });
+      });
+    }
+
+    if (schema.pointsOfInterest.length > 0) {
+      const poiId = "points-of-interest";
+      items.push({
+        id: poiId,
         label: `Points of Interest (${schema.pointsOfInterest.length})`,
+        data: { type: "folder", content: null },
+        hasChildren: true,
+        parentId: rootId,
         icon: "fas fa-exclamation-triangle",
-        children: schema.pointsOfInterest.map(
-          (poi: PointOfInterest, index: number) => ({
-            key: `poi-${index}`,
-            label: poi.name,
-            icon:
-              poi.severity === "high"
-                ? "fas fa-exclamation-circle"
-                : poi.severity === "medium"
-                  ? "fas fa-exclamation-triangle"
-                  : "fas fa-info-circle",
-            data: { type: "point-of-interest", content: poi as unknown },
-          }),
-        ) as Array<{
-          key: string;
-          label: string;
-          icon: string;
-          data: { type: string; content: unknown };
-        }>,
+      });
+
+      schema.pointsOfInterest.forEach((poi: PointOfInterest, index: number) => {
+        items.push({
+          id: `poi-${index}`,
+          label: poi.name,
+          data: { type: "point-of-interest", content: poi },
+          hasChildren: false,
+          parentId: poiId,
+          icon:
+            poi.severity === "high"
+              ? "fas fa-exclamation-circle"
+              : poi.severity === "medium"
+                ? "fas fa-exclamation-triangle"
+                : "fas fa-info-circle",
+        });
       });
     }
 
-    if (
-      schema.types !== undefined &&
-      schema.types.length > 0 &&
-      baseTree[0]?.children !== undefined
-    ) {
-      baseTree[0].children.push({
-        key: "types",
+    if (schema.types.length > 0) {
+      const typesId = "types";
+      items.push({
+        id: typesId,
         label: `Object Types (${schema.types.length})`,
+        data: { type: "folder", content: null },
+        hasChildren: true,
+        parentId: rootId,
         icon: "fas fa-cube",
-        children: schema.types.map((type: GraphQLType) => ({
-          key: `type-${type.name}`,
+      });
+
+      schema.types.forEach((type: GraphQLType) => {
+        items.push({
+          id: `type-${type.name}`,
           label: type.name,
+          data: { type: "object-type", content: type },
+          hasChildren: false,
+          parentId: typesId,
           icon: "fas fa-code",
-          data: { type: "object-type", content: type as unknown },
-        })) as Array<{
-          key: string;
-          label: string;
-          icon: string;
-          data: { type: string; content: unknown };
-        }>,
+        });
       });
     }
 
-    if (
-      schema.enums !== undefined &&
-      schema.enums.length > 0 &&
-      baseTree[0]?.children !== undefined
-    ) {
-      baseTree[0].children.push({
-        key: "enums",
+    if (schema.enums.length > 0) {
+      const enumsId = "enums";
+      items.push({
+        id: enumsId,
         label: `Enums (${schema.enums.length})`,
+        data: { type: "folder", content: null },
+        hasChildren: true,
+        parentId: rootId,
         icon: "fas fa-list",
-        children: schema.enums.map((enumType: { name: string }) => ({
-          key: `enum-${enumType.name}`,
+      });
+
+      schema.enums.forEach((enumType: { name: string }) => {
+        items.push({
+          id: `enum-${enumType.name}`,
           label: enumType.name,
+          data: { type: "enum", content: enumType },
+          hasChildren: false,
+          parentId: enumsId,
           icon: "fas fa-code",
-          data: { type: "enum", content: enumType as unknown },
-        })) as Array<{
-          key: string;
-          label: string;
-          icon: string;
-          data: { type: string; content: unknown };
-        }>,
+        });
       });
     }
 
-    if (baseTree[0]?.children !== undefined) {
-      baseTree[0].children.push({
-        key: "json-schema",
-        label: "JSON Schema",
-        icon: "fas fa-file-code",
-        data: { type: "json-schema", content: schema as unknown },
-      } as {
-        key: string;
-        label: string;
-        icon: string;
-        data: { type: string; content: unknown };
-      });
-    }
+    const jsonSchemaId = "json-schema";
+    items.push({
+      id: jsonSchemaId,
+      label: "JSON Schema",
+      data: { type: "json-schema", content: schema },
+      hasChildren: false,
+      parentId: rootId,
+      icon: "fas fa-file-code",
+    });
 
-    return baseTree;
+    return items;
   };
 
   return {

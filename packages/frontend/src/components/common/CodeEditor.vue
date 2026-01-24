@@ -154,14 +154,19 @@ watch(
     const currentContent = editorView.value.state.doc.toString();
     if (currentContent !== newContent) {
       isInternalUpdate.value = true;
-      const transaction = editorView.value.state.update({
-        changes: {
-          from: 0,
-          to: editorView.value.state.doc.length,
-          insert: newContent,
-        },
-      });
-      editorView.value.dispatch(transaction);
+      try {
+        editorView.value.dispatch({
+          changes: {
+            from: 0,
+            to: editorView.value.state.doc.length,
+            insert: newContent,
+          },
+        });
+      } catch (error) {
+        console.error("CodeEditor update error:", error);
+
+        createEditor();
+      }
       isInternalUpdate.value = false;
     }
   },

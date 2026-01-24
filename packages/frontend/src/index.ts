@@ -63,7 +63,6 @@ export const init = (sdk: FrontendSDK) => {
   } catch {
     // Ignore replay SDK errors if not available
   }
-
   sdk.search.addRequestViewMode({
     label: "GraphQL",
     view: {

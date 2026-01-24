@@ -73,8 +73,9 @@ export class ActivityService {
     try {
       return new URL(url).hostname;
     } catch {
-      return "Unknown";
+      // Ignore storage errors
     }
+    return "Unknown"; // Default value on error
   }
 }
 

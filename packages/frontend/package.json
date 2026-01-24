@@ -12,6 +12,7 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.28.1",
+    "@tanstack/vue-virtual": "^3.13.18",
     "@vueuse/core": "^10.5.0",
     "codemirror": "^6.0.1",
     "primevue": "4.1.0",

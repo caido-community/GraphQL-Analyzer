@@ -1102,7 +1102,7 @@ const cancelAttack = async () => {
     try {
       await sdk.backend.cancelAttackSession(currentAttackSessionId.value);
     } catch {
-      // Ignore cancellation errors
+      // Ignore cancellation
     }
   }
 
@@ -1771,7 +1771,8 @@ export default {
                 @update:use-selected-request="useSelectedRequest = $event"
                 @update:selected-session-id="selectedSessionId = $event"
                 @update:custom-url="customUrl = $event"
-              ></TargetSelection>
+              >
+              </TargetSelection>
 
               <!-- Attack Selection -->
               <Card
@@ -1966,7 +1967,8 @@ export default {
                     @select-result="selectResult"
                     @create-finding="createFindingFromResult"
                     @send-to-replay="sendToReplay"
-                  ></AttackResultsTable>
+                  >
+                  </AttackResultsTable>
                 </SplitterPanel>
 
                 <!-- Details Panel -->

@@ -201,6 +201,7 @@ export class GraphQLReplayService {
         );
         collectionId = existingCollection?.id;
       } catch {
+        // Ignore replay SDK errors if not available
         collectionId = undefined;
       }
 
@@ -253,7 +254,7 @@ export class GraphQLReplayService {
           await replaySDK.moveSession(sessionId, collectionId);
         }
       } catch {
-        // Ignore replay SDK errors if not available
+        // Ignore
       }
 
       try {
@@ -262,7 +263,7 @@ export class GraphQLReplayService {
           name: sessionName,
         });
       } catch {
-        // Ignore replay SDK errors if not available
+        // Ignore
       }
     } catch (error) {
       throw new Error(

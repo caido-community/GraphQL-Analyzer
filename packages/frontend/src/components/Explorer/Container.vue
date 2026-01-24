@@ -2,7 +2,7 @@
 import Card from "primevue/card";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
-import { nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import CodePanel from "./CodePanel.vue";
 import Header from "./Header.vue";
@@ -11,6 +11,7 @@ import { useCodeFormatter } from "./useCodeFormatter";
 import { useSessions } from "./useSessions";
 import { useTreeData } from "./useTreeData";
 
+import type { TreeItem } from "@/components/common/CTree";
 import { SessionTab } from "@/components/dashboard";
 import { useSDK } from "@/plugins/sdk";
 import { createStorageService } from "@/services/storage";
@@ -32,6 +33,14 @@ const {
   clearAllData,
 } = useSessions();
 const { getTreeData } = useTreeData(selectedSession);
+
+const treeData = computed(() => getTreeData());
+const filter = ref("");
+
+const expandedKeys = ref<Set<string>>(new Set());
+const selectedKey = ref<string>();
+const selectionKeys = ref<Set<string>>(new Set());
+
 const {
   selectedCode,
   selectedType,
@@ -40,22 +49,34 @@ const {
   clearCode,
 } = useCodeFormatter(selectedSession);
 
-type TreeNode = {
-  key: string;
-  label: string;
-  icon?: string;
-  data?: {
-    type: string;
-    content: unknown;
-  };
-  children?: TreeNode[];
-};
-
 const sdk = useSDK();
 const storageService = createStorageService(sdk);
 
-const selectedNode = ref<TreeNode | undefined>(undefined);
-const expandedKeys = ref<Record<string, boolean>>({});
+const onNodeSelect = async (item: TreeItem<unknown>) => {
+  selectedKey.value = item.id;
+  selectionKeys.value = new Set([item.id]);
+
+  const data = item.data as { type: string; content: unknown } | undefined;
+  if (data !== undefined) {
+    await handleNodeSelect({
+      data: data,
+    });
+  }
+  saveExplorerState();
+};
+
+const saveExplorerState = () => {
+  if (selectedSessionId.value !== undefined) {
+    storageService.set(
+      `explorer-expanded-keys-${selectedSessionId.value}`,
+      Array.from(expandedKeys.value),
+    );
+    storageService.set(
+      `explorer-selected-node-${selectedSessionId.value}`,
+      selectedKey.value ?? "",
+    );
+  }
+};
 
 const loadExplorerState = async () => {
   if (selectedSessionId.value === undefined) {
@@ -65,87 +86,53 @@ const loadExplorerState = async () => {
   await nextTick();
   await nextTick();
 
-  const storedExpandedKeys = storageService.get<Record<string, boolean>>(
+  const storedExpandedKeys = storageService.get<string[]>(
     `explorer-expanded-keys-${selectedSessionId.value}`,
   );
-  if (
-    storedExpandedKeys !== undefined &&
-    Object.keys(storedExpandedKeys).length > 0
-  ) {
-    expandedKeys.value = { ...storedExpandedKeys };
+  if (storedExpandedKeys && Array.isArray(storedExpandedKeys)) {
+    expandedKeys.value = new Set(storedExpandedKeys);
     await nextTick();
+  } else {
+    expandedKeys.value = new Set();
   }
 
   const storedSelectedNodeKey = storageService.get<string>(
     `explorer-selected-node-${selectedSessionId.value}`,
   );
+
   if (storedSelectedNodeKey !== undefined && storedSelectedNodeKey !== "") {
+    selectedKey.value = storedSelectedNodeKey;
+    selectionKeys.value = new Set([storedSelectedNodeKey]);
     await nextTick();
-    const treeData = getTreeData();
-    const findNode = (nodes: TreeNode[]): TreeNode | undefined => {
-      for (const node of nodes) {
-        if (node.key === storedSelectedNodeKey) {
-          return node;
-        }
-        if (node.children !== undefined) {
-          const found = findNode(node.children);
-          if (found !== undefined) {
-            return found;
-          }
-        }
-      }
-      return undefined;
-    };
-    const foundNode = findNode(treeData);
-    if (foundNode !== undefined) {
-      selectedNode.value = foundNode;
-      await handleNodeSelect(foundNode);
+
+    const foundItem = treeData.value.find(
+      (i) => i.id === storedSelectedNodeKey,
+    );
+    if (foundItem) {
+      await handleNodeSelect({
+        data: foundItem.data as { type: string; content: unknown },
+      });
     }
-  }
-};
-
-const saveExplorerState = () => {
-  storageService.set(
-    `explorer-expanded-keys-${selectedSessionId.value ?? "default"}`,
-    expandedKeys.value,
-  );
-  storageService.set(
-    `explorer-selected-node-${selectedSessionId.value ?? "default"}`,
-    selectedNode.value?.key ?? "",
-  );
-};
-
-const onNodeSelect = async (node: TreeNode) => {
-  selectedNode.value = node;
-  await handleNodeSelect(node);
-  saveExplorerState();
-};
-
-const onNodeExpand = (node: TreeNode) => {
-  if (node.key !== undefined) {
-    expandedKeys.value[node.key] = true;
-    saveExplorerState();
-  }
-};
-
-const onNodeCollapse = (node: TreeNode) => {
-  if (node.key !== undefined) {
-    expandedKeys.value[node.key] = false;
-    saveExplorerState();
+  } else {
+    selectedKey.value = undefined;
+    selectionKeys.value = new Set();
+    clearCode();
   }
 };
 
 const handleSelectSession = async (sessionId: string) => {
   clearCode();
-  selectedNode.value = undefined;
-  expandedKeys.value = {};
+  selectedKey.value = undefined;
+  selectionKeys.value = new Set();
+  expandedKeys.value = new Set();
   await selectSession(sessionId);
 };
 
 const handleClearAll = async () => {
   clearCode();
-  selectedNode.value = undefined;
-  expandedKeys.value = {};
+  selectedKey.value = undefined;
+  selectionKeys.value = new Set();
+  expandedKeys.value = new Set();
   await clearAllData();
 };
 
@@ -171,8 +158,9 @@ watch(selectedSessionId, async () => {
     await nextTick();
     await loadExplorerState();
   } else {
-    selectedNode.value = undefined;
-    expandedKeys.value = {};
+    selectedKey.value = undefined;
+    selectionKeys.value = new Set();
+    expandedKeys.value = new Set();
   }
 });
 
@@ -227,18 +215,12 @@ onMounted(async () => {
             <Splitter class="h-full">
               <SplitterPanel :size="40" :min-size="20">
                 <TreePanel
-                  :tree-data="
-                    selectedSession !== undefined &&
-                    selectedSession.supportsIntrospection === true &&
-                    selectedSession.schema !== undefined
-                      ? getTreeData()
-                      : []
-                  "
-                  :selected-node="selectedNode"
-                  :expanded-keys="expandedKeys"
+                  v-model:expanded-keys="expandedKeys"
+                  v-model:selection-keys="selectionKeys"
+                  :items="treeData"
+                  :filter="filter"
+                  @update:filter="filter = $event"
                   @node-select="onNodeSelect"
-                  @node-expand="onNodeExpand"
-                  @node-collapse="onNodeCollapse"
                 />
               </SplitterPanel>
 

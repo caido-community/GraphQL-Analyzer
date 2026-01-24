@@ -6,7 +6,6 @@ const config: RawConfigurationOrFn = {
       entry: ["caido.config.ts"],
     },
     "packages/backend": {
-      entry: ["src/index.ts"],
       project: ["src/**/*.ts"],
       ignoreDependencies: ["caido"],
     },
