@@ -13,7 +13,6 @@ import {
   testGraphQLEndpoint,
   testGraphQLEndpointFromRequest,
 } from "./api";
-import { setSDK } from "./sdk";
 
 export type {
   Result,
@@ -50,8 +49,6 @@ export type API = DefineAPI<{
 }>;
 
 export function init(sdk: SDK<API>) {
-  setSDK(sdk);
-
   sdk.api.register("testGraphQLEndpoint", testGraphQLEndpoint);
   sdk.api.register(
     "testGraphQLEndpointFromRequest",
