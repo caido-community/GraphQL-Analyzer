@@ -1,8 +1,5 @@
 import type { FrontendSDK } from "../plugins/sdk";
 
-/**
- * Activity Service for managing recent activities in the dashboard
- */
 export class ActivityService {
   private sdk: FrontendSDK;
 
@@ -10,68 +7,83 @@ export class ActivityService {
     this.sdk = sdk;
   }
 
-  /**
-   * Adds an attack activity to recent activities
-   */
-  async addAttackActivity(targetUrl: string, attackTypes: string[], attackSessionId: string): Promise<void> {
+  async addAttackActivity(
+    targetUrl: string,
+    attackTypes: string[],
+    attackSessionId: string,
+    requestId?: string,
+  ): Promise<void> {
     try {
       const domain = this.getDomainName(targetUrl);
       const attackTypesList = attackTypes.join(", ");
-      
+      const title =
+        requestId !== undefined && requestId !== null && requestId !== ""
+          ? `Attack run on ${domain} (${requestId.substring(0, 8)})`
+          : `Attack run on ${domain}`;
+
       const activityData = {
-        id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-        title: `Attack run on ${domain}`,
+        id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+        title: title,
         url: targetUrl,
         description: `GraphQL attacks: ${attackTypesList}`,
         createdAt: new Date(),
         status: "attack",
         type: "attack",
-        attackSessionId: attackSessionId
+        attackSessionId: attackSessionId,
       };
 
-      const currentStorage = this.sdk.storage.get() as any || {};
-      
-      // Initialize dashboard activities if not present
-      if (!currentStorage.dashboardActivities || !Array.isArray(currentStorage.dashboardActivities)) {
+      type StorageData = {
+        dashboardActivities?: Array<{
+          id: string;
+          title: string;
+          url: string;
+          description?: string;
+          createdAt: Date;
+          status: string;
+          type: string;
+          attackSessionId?: string;
+        }>;
+      };
+      const currentStorage: StorageData =
+        (this.sdk.storage.get() as StorageData | undefined) ?? {};
+
+      if (
+        currentStorage.dashboardActivities === undefined ||
+        !Array.isArray(currentStorage.dashboardActivities)
+      ) {
         currentStorage.dashboardActivities = [];
       }
-      
-      // Add activity to the beginning of the list
+
       currentStorage.dashboardActivities.unshift(activityData);
-      
-      // Keep only the most recent 20 activities to prevent storage bloat
+
       if (currentStorage.dashboardActivities.length > 20) {
-        currentStorage.dashboardActivities = currentStorage.dashboardActivities.slice(0, 20);
+        currentStorage.dashboardActivities =
+          currentStorage.dashboardActivities.slice(0, 20);
       }
-      
-      await this.sdk.storage.set(currentStorage);
-    } catch (error) {
-      // Silently handle storage errors
+
+      await this.sdk.storage.set(
+        currentStorage as unknown as Record<string, never>,
+      );
+    } catch {
+      // Ignore storage errors
     }
   }
 
-  /**
-   * Gets domain name from URL
-   */
   private getDomainName(url: string): string {
     try {
       return new URL(url).hostname;
     } catch {
-      return "Unknown";
+      // Ignore storage errors
     }
+    return "Unknown"; // Default value on error
   }
 }
 
-/**
- * Create and export singleton instance
- */
-let activityServiceInstance: ActivityService | null = null;
+let activityServiceInstance: ActivityService | undefined = undefined;
 
 export function createActivityService(sdk: FrontendSDK): ActivityService {
-  if (!activityServiceInstance) {
+  if (activityServiceInstance === undefined) {
     activityServiceInstance = new ActivityService(sdk);
   }
   return activityServiceInstance;
 }
-
-export { activityServiceInstance as activityService };

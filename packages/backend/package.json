@@ -6,6 +6,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "shared": "workspace:*",
+    "zod": "4.3.6"
+  },
   "devDependencies": {
     "@caido/sdk-backend": "^0.51.0"
   }

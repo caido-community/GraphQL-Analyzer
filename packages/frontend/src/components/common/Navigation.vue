@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import MenuBar from "primevue/menubar";
+import { ref } from "vue";
+
+import SettingsDialog from "./SettingsDialog.vue";
 
 type PageType = "Dashboard" | "Explorer" | "Voyager" | "Attacks" | "Docs";
-
 defineProps<{
   currentPage: PageType;
 }>();
-
 defineEmits<{
   (e: "page-change", page: PageType): void;
 }>();
-
 const items = [
   {
     label: "Dashboard",
@@ -39,8 +39,6 @@ const items = [
     page: "Docs" as PageType,
   },
 ];
-
-// Handle PrimeVue label type issue
 const handleLabel = (
   label: string | ((...args: unknown[]) => string) | undefined,
 ) => {
@@ -49,14 +47,14 @@ const handleLabel = (
   }
   return label;
 };
-</script>
 
+const showSettings = ref(false);
+</script>
 <template>
   <MenuBar :model="items" class="h-12 gap-2">
     <template #start>
       <div class="px-2 font-bold">GraphQL Analyzer</div>
     </template>
-
     <template #item="{ item }">
       <Button
         :severity="currentPage === item.page ? 'secondary' : 'contrast'"
@@ -67,5 +65,16 @@ const handleLabel = (
         @mousedown="$emit('page-change', item.page)"
       />
     </template>
+    <template #end>
+      <Button
+        v-tooltip="'Settings'"
+        icon="fas fa-cog"
+        severity="contrast"
+        size="small"
+        text
+        @click="showSettings = true"
+      />
+    </template>
   </MenuBar>
+  <SettingsDialog v-model:visible="showSettings" />
 </template>
