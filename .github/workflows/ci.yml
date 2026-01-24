@@ -17,9 +17,6 @@ jobs:
 
       - name: Setup Tools (mise)
         uses: jdx/mise-action@v2
-        with:
-          version: latest
-          install: true
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
