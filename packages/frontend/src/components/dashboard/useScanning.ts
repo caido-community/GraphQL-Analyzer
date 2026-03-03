@@ -1,4 +1,4 @@
-import type { Result } from "shared";
+import type { DashboardActivity, Result } from "shared";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
@@ -12,16 +12,6 @@ export function useScanning(
 
   const scanUrl = ref("");
   const isScanning = ref(false);
-  type DashboardActivity = {
-    id: string;
-    title: string;
-    url: string;
-    description?: string;
-    createdAt: Date;
-    status: string;
-    type: string;
-    attackSessionId?: string;
-  };
 
   const recentSessions = ref<DashboardActivity[]>([]);
   const customHeaders = ref<Array<{ name: string; value: string }>>([]);

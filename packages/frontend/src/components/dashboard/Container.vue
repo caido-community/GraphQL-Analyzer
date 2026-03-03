@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, ref } from "vue";
 
 import Header from "./Header.vue";
 import HeadersForm from "./HeadersForm.vue";
+import ImportSchemaDialog from "./ImportSchemaDialog.vue";
 import RecentActivity from "./RecentActivity.vue";
 import ScanForm from "./ScanForm.vue";
 import { useScanning } from "./useScanning";
+import { useSchemaImport } from "./useSchemaImport";
 
 const props = defineProps<{
   navigateTo?: (
@@ -27,6 +29,23 @@ const {
   deleteAllData,
 } = useScanning(props.navigateTo);
 
+const { importSchemaFile } = useSchemaImport(
+  props.navigateTo,
+  loadRecentSessions,
+);
+
+const showImportDialog = ref(false);
+
+const handleImport = async (data: {
+  fileContent: string;
+  fileName: string;
+}) => {
+  const success = await importSchemaFile(data.fileContent, data.fileName);
+  if (success) {
+    showImportDialog.value = false;
+  }
+};
+
 onMounted(() => {
   loadRecentSessions();
 });
@@ -34,7 +53,7 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-col h-full gap-1 overflow-hidden">
-    <Header />
+    <Header @import-schema="showImportDialog = true" />
 
     <div class="flex gap-2 flex-1 min-h-0">
       <div class="flex-1 flex flex-col gap-2">
@@ -64,5 +83,10 @@ onMounted(() => {
         @delete-all-data="deleteAllData"
       />
     </div>
+
+    <ImportSchemaDialog
+      v-model:visible="showImportDialog"
+      @import="handleImport"
+    />
   </div>
 </template>

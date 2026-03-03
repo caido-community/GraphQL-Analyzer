@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import Button from "primevue/button";
 import Card from "primevue/card";
+
+defineEmits<{
+  (e: "import-schema"): void;
+}>();
 </script>
 
 <template>
@@ -19,6 +24,14 @@ import Card from "primevue/card";
             information and security insights.
           </p>
         </div>
+        <Button
+          label="Import Schema"
+          icon="fas fa-file-import"
+          severity="secondary"
+          outlined
+          size="small"
+          @click="$emit('import-schema')"
+        />
       </div>
     </template>
   </Card>
