@@ -32,7 +32,7 @@ export type {
   AttackConfig,
   AttackSession,
   DashboardActivity,
-  ExplorerSessionData,
+  ExplorerSession,
   SchemaImportResult,
 } from "shared";
 

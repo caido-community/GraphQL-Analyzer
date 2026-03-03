@@ -1,6 +1,6 @@
 import type {
   DashboardActivity,
-  ExplorerSessionData,
+  ExplorerSession,
   Result,
   SchemaImportResult,
 } from "shared";
@@ -12,7 +12,7 @@ function generateId(): string {
 }
 
 type StorageData = {
-  explorerSessions?: ExplorerSessionData[];
+  explorerSessions?: ExplorerSession[];
   selectedExplorerSessionId?: string;
   dashboardActivities?: DashboardActivity[];
 };
@@ -59,7 +59,7 @@ export function useSchemaImport(
 
       const displayName = fileName.replace(/\.(json|graphql|gql)$/i, "");
 
-      const sessionData: ExplorerSessionData = {
+      const sessionData: ExplorerSession = {
         id: generateId(),
         title: displayName,
         url: `file://${fileName}`,

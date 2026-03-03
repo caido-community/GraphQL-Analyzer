@@ -198,14 +198,15 @@ export type DashboardActivity = {
   attackSessionId?: string;
 };
 
-export type ExplorerSessionData = {
+export type ExplorerSession = {
   id: string;
   title: string;
   url: string;
   schema?: GraphQLSchema;
-  supportsIntrospection?: boolean;
+  supportsIntrospection: boolean;
   createdAt: Date;
   status: string;
+  requestId?: string;
   sourceType?: string;
 };
 

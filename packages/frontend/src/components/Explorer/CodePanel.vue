@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import { computed } from "vue";
 
 import type { ExplorerSession } from "./useSessions";
 
@@ -20,6 +21,10 @@ const emit = defineEmits<{
   openInVoyager: [];
   sendToAttacker: [];
 }>();
+
+const isFileImport = computed(
+  () => props.selectedSession?.sourceType === "file-import",
+);
 
 const copyToClipboard = async () => {
   if (props.selectedCode !== "") {
@@ -84,12 +89,17 @@ const sendToAttacker = async () => {
         </div>
         <div class="flex gap-2">
           <Button
-            v-tooltip="'Send to Attacker'"
+            v-tooltip="
+              isFileImport
+                ? 'Cannot attack imported schemas (no endpoint)'
+                : 'Send to Attacker'
+            "
             icon="fas fa-shield-alt"
             size="small"
             text
             severity="danger"
             class="text-xs"
+            :disabled="isFileImport"
             @click="sendToAttacker"
           />
           <Button
