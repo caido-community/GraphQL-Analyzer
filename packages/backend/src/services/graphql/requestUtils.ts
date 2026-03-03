@@ -1,4 +1,4 @@
-import type { Result } from "shared";
+
 
 type ParsedRawRequest = {
   headers: Record<string, string>;
@@ -97,7 +97,7 @@ export function mergeHeaders(
 export function mapHttpStatusToError(
   statusCode: number,
   responseBody: string,
-): Result<undefined> | undefined {
+): { kind: "Error"; error: string } | undefined {
   if (statusCode === 401) {
     return {
       kind: "Error",
