@@ -24,6 +24,8 @@ const editableVariables = ref("{}");
 const editableOperationName = ref("");
 const queryValidationErrors = ref<string[]>([]);
 const activeTab = ref(0);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const cachedEditorView = ref<any>(undefined);
 
 const originalQuery = ref("");
 const originalVariables = ref("{}");
@@ -91,6 +93,18 @@ const getRawData = computed((): string => {
 
   return "";
 });
+
+const tryGetEditorView = () => {
+  const editor = props.sdk.window?.getActiveEditor?.();
+  if (editor !== undefined && editor !== null) {
+    const editorView = editor.getEditorView();
+    if (editorView !== undefined && editorView !== null) {
+      cachedEditorView.value = editorView;
+      return editorView;
+    }
+  }
+  return cachedEditorView.value;
+};
 
 const parsedHttp = computed(() => {
   const raw = getRawData.value;
@@ -258,6 +272,7 @@ const initializeData = () => {
 
 onMounted(async () => {
   await nextTick();
+  tryGetEditorView();
   initializeData();
 });
 
@@ -615,30 +630,29 @@ const saveChanges = () => {
     const newBody = reconstructGraphQLBody();
     const newRaw = reconstructRawHttpRequest(newBody);
 
-    const editor = props.sdk.window?.getActiveEditor?.();
-    if (editor !== undefined && editor !== null) {
-      const editorView = editor.getEditorView();
-      if (editorView !== undefined && editorView !== null) {
-        editorView.dispatch({
-          changes: {
-            from: 0,
-            to: editorView.state.doc.length,
-            insert: newRaw,
-          },
-        });
+    const editorView = tryGetEditorView();
 
-        originalQuery.value = editableQuery.value;
-        originalVariables.value = editableVariables.value;
-        originalOperationName.value = editableOperationName.value;
+    if (editorView !== undefined && editorView !== null) {
+      editorView.dispatch({
+        changes: {
+          from: 0,
+          to: editorView.state.doc.length,
+          insert: newRaw,
+        },
+      });
 
-        props.sdk.window.showToast("Request updated successfully", {
-          variant: "success",
-        });
-      } else {
-        throw new Error("Editor view not available");
-      }
+      originalQuery.value = editableQuery.value;
+      originalVariables.value = editableVariables.value;
+      originalOperationName.value = editableOperationName.value;
+
+      props.sdk.window.showToast("Request updated successfully", {
+        variant: "success",
+      });
     } else {
-      throw new Error("Active editor not available");
+      props.sdk.window.showToast(
+        "Switch to the Raw tab first, then back to GraphQL to enable editing.",
+        { variant: "warning" },
+      );
     }
   } catch (error) {
     const errorMessage =

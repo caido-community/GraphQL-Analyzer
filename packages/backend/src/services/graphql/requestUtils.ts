@@ -1,5 +1,3 @@
-
-
 type ParsedRawRequest = {
   headers: Record<string, string>;
   body: string;
