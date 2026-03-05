@@ -2,6 +2,8 @@
 import Button from "primevue/button";
 import Card from "primevue/card";
 
+defineOptions({ name: "DashboardHeader" });
+
 defineEmits<{
   (e: "import-schema"): void;
 }>();

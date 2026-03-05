@@ -5,6 +5,8 @@ import { computed, ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 
+defineOptions({ name: "ImportSchemaDialog" });
+
 const props = defineProps<{
   visible: boolean;
 }>();
@@ -164,16 +166,15 @@ const resetAndClose = () => {
         Explorer and Voyager.
       </p>
 
-      <!-- Drop zone -->
       <div
-        :class="[
-          'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all duration-200',
-          isDraggingOver
-            ? 'border-primary-400 bg-primary-900/20'
-            : selectedFile !== undefined
-              ? 'border-green-500 bg-green-900/10'
-              : 'border-surface-600 hover:border-surface-400 bg-surface-800',
-        ]"
+        :class="{
+          'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all duration-200': true,
+          'border-primary-400 bg-primary-900/20': isDraggingOver,
+          'border-green-500 bg-green-900/10':
+            !isDraggingOver && selectedFile !== undefined,
+          'border-surface-600 hover:border-surface-400 bg-surface-800':
+            !isDraggingOver && selectedFile === undefined,
+        }"
         @drop="handleDrop"
         @dragover="handleDragOver"
         @dragleave="handleDragLeave"
@@ -220,7 +221,6 @@ const resetAndClose = () => {
         </div>
       </div>
 
-      <!-- Format hint -->
       <div
         class="text-xs text-surface-500 border border-surface-700 rounded p-3 bg-surface-800"
       >

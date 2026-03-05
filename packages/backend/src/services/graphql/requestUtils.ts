@@ -65,15 +65,8 @@ export function mergeHeaders(
 
   if (customHeaders !== undefined && typeof customHeaders === "object") {
     Object.entries(customHeaders).forEach(([key, value]) => {
-      if (
-        key &&
-        value &&
-        typeof key === "string" &&
-        typeof value === "string" &&
-        key.trim() &&
-        value.trim()
-      ) {
-        headers[key] = String(value);
+      if (key.trim() !== "" && value.trim() !== "") {
+        headers[key] = value;
       }
     });
   }

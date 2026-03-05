@@ -24,8 +24,12 @@ const editableVariables = ref("{}");
 const editableOperationName = ref("");
 const queryValidationErrors = ref<string[]>([]);
 const activeTab = ref(0);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const cachedEditorView = ref<any>(undefined);
+type MinimalEditorView = {
+  state: { doc: { toString(): string; length: number } };
+  dispatch(tr: { changes: { from: number; to: number; insert: string } }): void;
+};
+
+const cachedEditorView = ref<MinimalEditorView | undefined>(undefined);
 
 const originalQuery = ref("");
 const originalVariables = ref("{}");
@@ -34,12 +38,12 @@ const originalOperationName = ref("");
 const isReplayTab = computed(() => window.location.hash.includes("/replay"));
 
 const parseHttpRaw = (raw: string) => {
-  if (raw === undefined || raw === "") return null;
+  if (raw === undefined || raw === "") return undefined;
 
   let parts = raw.split("\r\n\r\n");
   if (parts.length < 2) {
     parts = raw.split("\n\n");
-    if (parts.length < 2) return null;
+    if (parts.length < 2) return undefined;
   }
 
   const headerSection = parts[0];
@@ -108,7 +112,7 @@ const tryGetEditorView = () => {
 
 const parsedHttp = computed(() => {
   const raw = getRawData.value;
-  if (!raw || raw.trim() === "") return null;
+  if (raw === "" || raw.trim() === "") return undefined;
   const parsed = parseHttpRaw(raw);
   return parsed;
 });
@@ -156,12 +160,12 @@ const isGraphQLQuery = (text: string): boolean => {
 
 const graphqlData = computed(() => {
   const parsed = parsedHttp.value;
-  if (parsed === null || parsed.body === undefined || parsed.body === "") {
-    return null;
+  if (parsed === undefined || parsed.body === undefined || parsed.body === "") {
+    return undefined;
   }
 
   const body = parsed.body.trim();
-  if (!body) return null;
+  if (body === "") return undefined;
 
   try {
     const bodyJson = JSON.parse(body) as {
@@ -186,15 +190,15 @@ const graphqlData = computed(() => {
     }
   }
 
-  return null;
+  return undefined;
 });
 
 const isActuallyGraphQL = computed(() => {
   if (props.request === undefined || props.request === null) return false;
   const parsed = parsedHttp.value;
-  if (parsed === null || parsed === undefined) return false;
+  if (parsed === undefined) return false;
 
-  return parsed.method === "POST" && graphqlData.value !== null;
+  return parsed.method === "POST" && graphqlData.value !== undefined;
 });
 
 const formatGraphQLQuery = (query: string): string => {
@@ -572,7 +576,6 @@ const reconstructGraphQLBody = (): string => {
 const reconstructRawHttpRequest = (newBody: string): string => {
   const parsed = parsedHttp.value;
   if (
-    parsed === null ||
     parsed === undefined ||
     props.request === undefined ||
     props.request === null
@@ -667,7 +670,6 @@ const saveChanges = () => {
 <template>
   <div class="h-full flex flex-col bg-surface-800">
     <div v-if="isActuallyGraphQL" class="flex-1 min-h-0 flex flex-col">
-      <!-- Clean Action Toolbar -->
       <div
         class="flex items-center justify-between p-2 border-b border-surface-600 flex-shrink-0"
       >
@@ -717,7 +719,6 @@ const saveChanges = () => {
         </div>
       </div>
 
-      <!-- Full Width Content -->
       <div class="flex-1 min-h-0 overflow-hidden">
         <TabView
           v-model="activeTab"
@@ -728,10 +729,8 @@ const saveChanges = () => {
             panelContainer: { class: 'flex-1 min-h-0 overflow-hidden' },
           }"
         >
-          <!-- Query Tab -->
           <TabPanel header="Query" :pt="{ content: { class: 'h-full p-0' } }">
             <div class="h-full flex flex-col p-2">
-              <!-- Operation Name (editable in Replay) -->
               <div
                 v-if="isReplayTab || graphqlData?.operationName"
                 class="mb-2 flex-shrink-0"
@@ -750,7 +749,6 @@ const saveChanges = () => {
                 </div>
               </div>
 
-              <!-- Validation Errors -->
               <div
                 v-if="queryValidationErrors.length > 0"
                 class="border border-red-500 rounded p-2 mb-2 flex-shrink-0"
@@ -773,7 +771,6 @@ const saveChanges = () => {
                 </ul>
               </div>
 
-              <!-- Enhanced Query Display -->
               <div
                 class="flex-1 min-h-0 border border-surface-600 rounded overflow-hidden bg-surface-900"
               >
@@ -789,13 +786,11 @@ const saveChanges = () => {
             </div>
           </TabPanel>
 
-          <!-- Variables Tab -->
           <TabPanel
             header="Variables"
             :pt="{ content: { class: 'h-full p-0' } }"
           >
             <div class="h-full flex gap-2 p-2">
-              <!-- Variables JSON -->
               <div class="flex-1 min-w-0 flex flex-col">
                 <div class="mb-2 flex-shrink-0">
                   <h4 class="text-sm font-medium text-surface-200">
@@ -819,7 +814,6 @@ const saveChanges = () => {
                 </div>
               </div>
 
-              <!-- Query Fields Info -->
               <div class="w-80 flex-shrink-0 flex flex-col">
                 <div class="mb-2 flex-shrink-0">
                   <h4 class="text-sm font-medium text-surface-200">
@@ -867,14 +861,12 @@ const saveChanges = () => {
             </div>
           </TabPanel>
 
-          <!-- Request Info Tab -->
           <TabPanel
             header="Request Info"
             :pt="{ content: { class: 'h-full p-0' } }"
           >
             <div class="h-full overflow-auto p-2">
               <div class="space-y-3">
-                <!-- Operation Info -->
                 <div
                   v-if="graphqlData?.operationName"
                   class="border border-surface-600 rounded p-3"
@@ -890,7 +882,6 @@ const saveChanges = () => {
                   </div>
                 </div>
 
-                <!-- Endpoint Details -->
                 <div class="border border-surface-600 rounded p-3">
                   <h4
                     class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2"
@@ -928,7 +919,6 @@ const saveChanges = () => {
                   </div>
                 </div>
 
-                <!-- Security Headers -->
                 <div class="border border-surface-600 rounded p-3">
                   <h4
                     class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2"
@@ -977,7 +967,6 @@ const saveChanges = () => {
         </TabView>
       </div>
 
-      <!-- Minimal Status Bar -->
       <div
         class="flex items-center justify-between px-3 py-1 border-t border-surface-600 bg-surface-800 text-xs flex-shrink-0"
       >
@@ -995,7 +984,6 @@ const saveChanges = () => {
       </div>
     </div>
 
-    <!-- Not GraphQL State -->
     <div v-else class="flex-1 flex items-center justify-center">
       <div class="text-center text-surface-500">
         <i class="fas fa-exclamation-circle text-4xl mb-4"></i>

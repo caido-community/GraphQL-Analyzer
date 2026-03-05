@@ -41,7 +41,7 @@ export const init = (sdk: FrontendSDK) => {
 
   // Detect whether a raw HTTP request contains a GraphQL query
   function isGraphQLRequest(raw: string): boolean {
-    if (!raw || raw.trim() === "") return false;
+    if (raw === "" || raw.trim() === "") return false;
 
     // Split headers from body
     let parts = raw.split("\r\n\r\n");

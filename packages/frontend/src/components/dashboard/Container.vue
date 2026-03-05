@@ -9,6 +9,8 @@ import ScanForm from "./ScanForm.vue";
 import { useScanning } from "./useScanning";
 import { useSchemaImport } from "./useSchemaImport";
 
+defineOptions({ name: "DashboardContainer" });
+
 const props = defineProps<{
   navigateTo?: (
     page: "Dashboard" | "Explorer" | "Voyager" | "Attacks" | "History",

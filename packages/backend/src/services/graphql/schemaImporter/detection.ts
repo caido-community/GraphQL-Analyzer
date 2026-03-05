@@ -6,11 +6,11 @@ export type SchemaFormat =
   | "introspection-direct"
   | "unknown";
 
-export interface DetectionResult {
+export type DetectionResult = {
   format: SchemaFormat;
   schema: IntrospectionSchema | undefined;
   error: string | undefined;
-}
+};
 
 export function detectSchemaFormat(data: unknown): DetectionResult {
   if (data === undefined || data === null || typeof data !== "object") {
