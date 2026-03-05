@@ -1,10 +1,3 @@
-/**
- * Minimal but realistic introspection schema fixture for testing.
- *
- * Contains: Query type with 2 fields, Mutation type with 1 field,
- * 1 custom OBJECT type, 1 ENUM, 1 INTERFACE, plus standard scalars.
- */
-
 export const minimalIntrospectionSchema = {
   queryType: { name: "Query" },
   mutationType: { name: "Mutation" },
