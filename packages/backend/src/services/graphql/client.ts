@@ -1,9 +1,17 @@
 import type { SDK } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
-import type { GraphQLSchema, IntrospectionSchema, Result } from "shared";
+import type { GraphQLSchema, Result } from "shared";
 
 import { INTROSPECTION_QUERY } from "./introspection";
-import { parseIntrospectionResult } from "./parser";
+import {
+  mapHttpStatusToError,
+  mergeHeaders,
+  parseRawHttpRequest,
+} from "./requestUtils";
+import {
+  parseIntrospectionResponseBody,
+  parseQueryResponseBody,
+} from "./responseParser";
 
 export class GraphQLClient {
   constructor(private sdk: SDK) {}
@@ -37,82 +45,11 @@ export class GraphQLClient {
       }
 
       const originalRaw = originalRequest.getRaw().toText();
-      const lines = originalRaw.split(/\r?\n/);
-      const originalHeaders: Record<string, string> = {};
-      let originalBody = "";
+      const parsed = parseRawHttpRequest(originalRaw);
+      const originalHeaders = parsed.headers;
+      const originalBody = parsed.body;
 
-      let inHeaders = false;
-      let bodyStartIndex = -1;
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (line === undefined) continue;
-
-        const trimmedLine = line.trim();
-
-        if (i === 0) {
-          inHeaders = true;
-          continue;
-        }
-
-        if (inHeaders === true && trimmedLine === "") {
-          bodyStartIndex = i + 1;
-          break;
-        }
-
-        if (
-          inHeaders === true &&
-          typeof trimmedLine === "string" &&
-          trimmedLine.includes(":")
-        ) {
-          const colonIndex = trimmedLine.indexOf(":");
-          const headerName = trimmedLine.substring(0, colonIndex).trim();
-          const headerValue = trimmedLine.substring(colonIndex + 1).trim();
-          if (
-            headerName !== "" &&
-            headerValue !== "" &&
-            headerName.toLowerCase() !== "content-length"
-          ) {
-            originalHeaders[headerName] = headerValue;
-          }
-        }
-      }
-
-      if (bodyStartIndex > 0 && bodyStartIndex < lines.length) {
-        originalBody = lines.slice(bodyStartIndex).join("\r\n").trim();
-      }
-
-      const headers: Record<string, string> = {
-        ...originalHeaders,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": "Caido/GraphQL-Analyzer",
-      };
-
-      if (customHeaders && typeof customHeaders === "object") {
-        Object.entries(customHeaders).forEach(([key, value]) => {
-          if (
-            key &&
-            value &&
-            typeof key === "string" &&
-            typeof value === "string" &&
-            key.trim() &&
-            value.trim()
-          ) {
-            headers[key] = String(value);
-          }
-        });
-      }
-
-      for (const [key, value] of Object.entries(headers)) {
-        if (
-          typeof value !== "string" ||
-          value === "" ||
-          value === "null" ||
-          value === "undefined"
-        ) {
-          delete headers[key];
-        }
-      }
+      const headers = mergeHeaders(originalHeaders, customHeaders);
 
       const method = originalRequest.getMethod() || "POST";
 
@@ -207,38 +144,7 @@ export class GraphQLClient {
         return { kind: "Error", error: "Failed to extract host from URL" };
       }
 
-      const headers: Record<string, string> = {};
-
-      headers["Host"] = String(hostHeader);
-      headers["Content-Type"] = "application/json";
-      headers["Accept"] = "application/json";
-      headers["User-Agent"] = "Caido/GraphQL-Analyzer";
-
-      if (customHeaders && typeof customHeaders === "object") {
-        Object.entries(customHeaders).forEach(([key, value]) => {
-          if (
-            key &&
-            value &&
-            typeof key === "string" &&
-            typeof value === "string" &&
-            key.trim() &&
-            value.trim()
-          ) {
-            headers[key] = String(value);
-          }
-        });
-      }
-
-      for (const [key, value] of Object.entries(headers)) {
-        if (
-          typeof value !== "string" ||
-          value === "" ||
-          value === "null" ||
-          value === "undefined"
-        ) {
-          delete headers[key];
-        }
-      }
+      const headers = mergeHeaders({ Host: String(hostHeader) }, customHeaders);
 
       const requestBody = JSON.stringify({
         query: INTROSPECTION_QUERY,
@@ -285,119 +191,12 @@ export class GraphQLClient {
     const statusCode = result.response.getCode();
     const responseBody = result.response.getBody()?.toText() ?? "";
 
-    if (statusCode === 401) {
-      return {
-        kind: "Error",
-        error: `Authentication required (HTTP 401). Add Authorization, Cookie, or API key headers.`,
-      };
+    const statusError = mapHttpStatusToError(statusCode, responseBody);
+    if (statusError !== undefined) {
+      return statusError;
     }
 
-    if (statusCode === 403) {
-      return {
-        kind: "Error",
-        error: `Access forbidden (HTTP 403). Your credentials lack required permissions.`,
-      };
-    }
-
-    if (statusCode === 404) {
-      return {
-        kind: "Error",
-        error: `Endpoint not found (HTTP 404). Verify the URL is correct.`,
-      };
-    }
-
-    if (statusCode === 405) {
-      return {
-        kind: "Error",
-        error: `Method not allowed (HTTP 405). This endpoint may not support POST requests.`,
-      };
-    }
-
-    if (statusCode >= 500) {
-      return {
-        kind: "Error",
-        error: `Server error (HTTP ${statusCode}). The server is experiencing issues.`,
-      };
-    }
-
-    if (statusCode !== 200) {
-      const trimmed = responseBody.trim();
-      if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
-        return {
-          kind: "Error",
-          error: `Received HTML page (HTTP ${statusCode}). This may not be a GraphQL endpoint.`,
-        };
-      }
-      const preview = responseBody.substring(0, 150);
-      return {
-        kind: "Error",
-        error: `Unexpected response (HTTP ${statusCode}): ${preview}...`,
-      };
-    }
-
-    try {
-      const jsonResponse = JSON.parse(responseBody);
-
-      if (
-        Array.isArray(jsonResponse.errors) &&
-        jsonResponse.errors.length > 0
-      ) {
-        const introspectionDisabled = jsonResponse.errors.some(
-          (error: { message?: string }) => {
-            const message = error.message;
-            return (
-              typeof message === "string" &&
-              (message.toLowerCase().includes("introspection") ||
-                message.toLowerCase().includes("disabled") ||
-                message.toLowerCase().includes("not allowed"))
-            );
-          },
-        );
-
-        if (introspectionDisabled === true) {
-          return { kind: "Ok", value: { supportsIntrospection: false } };
-        }
-
-        const errorMessages = (
-          jsonResponse.errors as Array<{ message?: string }>
-        )
-          .map((e) => e.message ?? "Unknown error")
-          .join(", ");
-        return {
-          kind: "Error",
-          error: `GraphQL error: ${errorMessages}`,
-        };
-      }
-
-      if (
-        jsonResponse.data !== undefined &&
-        jsonResponse.data.__schema !== undefined
-      ) {
-        const schema = parseIntrospectionResult(
-          jsonResponse.data.__schema as IntrospectionSchema,
-        );
-        (
-          schema as GraphQLSchema & { rawIntrospection?: unknown }
-        ).rawIntrospection = jsonResponse.data;
-        return { kind: "Ok", value: { supportsIntrospection: true, schema } };
-      }
-
-      if (jsonResponse.data !== undefined) {
-        return {
-          kind: "Error",
-          error:
-            "GraphQL endpoint responded but introspection is disabled or not available.",
-        };
-      }
-
-      return {
-        kind: "Error",
-        error: "Endpoint returned JSON but it's not a valid GraphQL response.",
-      };
-    } catch {
-      const preview = responseBody.substring(0, 100);
-      return { kind: "Error", error: `Invalid JSON response: ${preview}...` };
-    }
+    return parseIntrospectionResponseBody(responseBody);
   }
 
   async executeQuery(
@@ -432,15 +231,7 @@ export class GraphQLClient {
       }
 
       const body = result.response.getBody()?.toText() ?? "";
-      try {
-        const json = JSON.parse(body);
-        return { kind: "Ok", value: json };
-      } catch {
-        return {
-          kind: "Error",
-          error: "Invalid JSON response",
-        };
-      }
+      return parseQueryResponseBody(body);
     } catch (error) {
       return {
         kind: "Error",

@@ -1,4 +1,6 @@
-import type { GraphQLField, GraphQLSchema } from "shared";
+import type { ExplorerSession, GraphQLField } from "shared";
+
+export type { ExplorerSession };
 
 export type D3Node = {
   id: number;
@@ -27,16 +29,6 @@ export type NavItem = {
   children?: NavItem[];
   fullSignature?: string;
   fieldData?: unknown;
-};
-
-export type ExplorerSession = {
-  id: string;
-  title: string;
-  url: string;
-  schema?: GraphQLSchema;
-  supportsIntrospection: boolean;
-  createdAt: Date;
-  status: string;
 };
 
 export const LAYOUT = {

@@ -1,7 +1,8 @@
 import type { SDK } from "caido:plugin";
-import type { GraphQLSchema, Result } from "shared";
+import type { GraphQLSchema, Result, SchemaImportResult } from "shared";
 
 import { GraphQLService } from "../services/graphql";
+import { parseSchemaFromFileContent } from "../services/graphql/schemaImporter";
 
 export async function testGraphQLEndpoint(
   sdk: SDK,
@@ -95,4 +96,24 @@ export async function getRequestInfo(
       error: `Failed to get request info: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+}
+
+export function importSchemaFromFile(
+  _sdk: SDK,
+  fileContent: string,
+  fileName: string,
+): Result<SchemaImportResult & { fileName: string }> {
+  const result = parseSchemaFromFileContent(fileContent);
+
+  if (result.kind === "Error") {
+    return result;
+  }
+
+  return {
+    kind: "Ok",
+    value: {
+      ...result.value,
+      fileName,
+    },
+  };
 }

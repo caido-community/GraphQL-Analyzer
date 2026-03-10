@@ -1,18 +1,9 @@
-import type { GraphQLSchema } from "shared";
+import type { ExplorerSession } from "shared";
 import { computed, ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 
-export type ExplorerSession = {
-  id: string;
-  title: string;
-  url: string;
-  schema?: GraphQLSchema;
-  supportsIntrospection: boolean;
-  createdAt: Date;
-  status: string;
-  requestId?: string;
-};
+export type { ExplorerSession };
 
 export const useSessions = () => {
   const sdk = useSDK();

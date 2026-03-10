@@ -9,6 +9,7 @@ import {
   getAttackStatus,
   getAttackTemplates,
   getRequestInfo,
+  importSchemaFromFile,
   startGraphQLAttacks,
   testGraphQLEndpoint,
   testGraphQLEndpointFromRequest,
@@ -30,6 +31,9 @@ export type {
   AttackFinding,
   AttackConfig,
   AttackSession,
+  DashboardActivity,
+  ExplorerSession,
+  SchemaImportResult,
 } from "shared";
 
 export { type BackendEvents } from "./types";
@@ -46,6 +50,7 @@ export type API = DefineAPI<{
   getAttackTemplates: typeof getAttackTemplates;
   createCaidoFinding: typeof createCaidoFinding;
   getRequestInfo: typeof getRequestInfo;
+  importSchemaFromFile: typeof importSchemaFromFile;
 }>;
 
 export function init(sdk: SDK<API>) {
@@ -63,6 +68,7 @@ export function init(sdk: SDK<API>) {
   sdk.api.register("getAttackTemplates", getAttackTemplates);
   sdk.api.register("createCaidoFinding", createCaidoFinding);
   sdk.api.register("getRequestInfo", getRequestInfo);
+  sdk.api.register("importSchemaFromFile", importSchemaFromFile);
 
   sdk.console.log("GraphQL Analyzer backend initialized");
 }

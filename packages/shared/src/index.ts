@@ -186,3 +186,31 @@ export type AttackSession = {
   totalFindings: number;
   criticalFindings: number;
 };
+
+export type DashboardActivity = {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  createdAt: Date;
+  status: string;
+  type: string;
+  attackSessionId?: string;
+};
+
+export type ExplorerSession = {
+  id: string;
+  title: string;
+  url: string;
+  schema?: GraphQLSchema;
+  supportsIntrospection: boolean;
+  createdAt: Date;
+  status: string;
+  requestId?: string;
+  sourceType?: string;
+};
+
+export type SchemaImportResult = {
+  schema: GraphQLSchema;
+  format: string;
+};
