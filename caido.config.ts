@@ -12,7 +12,7 @@ export default defineConfig({
   id,
   name: "GraphQL Analyzer",
   description: "Plugin for GraphQL schema discovery, visualization, and advanced security",
-  version: "1.0.3",
+  version: "1.0.4",
   author: {
     name: "Amr Elsagaei",
     email: "info@amrelsagaei.com",
