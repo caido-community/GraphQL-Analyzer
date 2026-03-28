@@ -30,6 +30,7 @@ type MinimalEditorView = {
 };
 
 const cachedEditorView = ref<MinimalEditorView | undefined>(undefined);
+const cachedRawData = ref<string>("");
 
 const originalQuery = ref("");
 const originalVariables = ref("{}");
@@ -79,14 +80,27 @@ const parseHttpRaw = (raw: string) => {
   return { method, headers, body };
 };
 
-const getRawData = computed((): string => {
+const isHttpRequestRaw = (raw: string): boolean => {
+  if (raw === undefined || raw === "") return false;
+  const firstLine = raw.trimStart().split(/\r?\n/)[0] ?? "";
+  return /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/i.test(firstLine);
+};
+
+const resolveRawData = (): string => {
   if (isReplayTab.value) {
     const editor = props.sdk.window?.getActiveEditor?.();
     if (editor !== undefined && editor !== null) {
       const editorView = editor.getEditorView();
       if (editorView !== undefined && editorView !== null) {
         const raw = editorView.state.doc.toString();
-        if (raw !== undefined && raw !== null && raw !== "") return raw;
+        if (
+          raw !== undefined &&
+          raw !== null &&
+          raw !== "" &&
+          isHttpRequestRaw(raw)
+        ) {
+          return raw;
+        }
       }
     }
   }
@@ -96,7 +110,26 @@ const getRawData = computed((): string => {
   }
 
   return "";
+};
+
+const getRawData = computed((): string => {
+  const raw = resolveRawData();
+  if (raw !== "") {
+    return raw;
+  }
+
+  return cachedRawData.value;
 });
+
+watch(
+  getRawData,
+  (newValue) => {
+    if (newValue !== "" && isHttpRequestRaw(newValue)) {
+      cachedRawData.value = newValue;
+    }
+  },
+  { immediate: true },
+);
 
 const tryGetEditorView = () => {
   const editor = props.sdk.window?.getActiveEditor?.();
