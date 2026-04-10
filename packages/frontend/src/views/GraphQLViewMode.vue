@@ -79,7 +79,8 @@ const parseHttpRaw = (raw: string) => {
   return { method, headers, body };
 };
 
-const isResponseContent = (raw: string): boolean => {
+const isResponseContent = (raw: string | undefined): boolean => {
+  if (raw === undefined || raw === "") return true;
   return raw.trimStart().startsWith("HTTP/");
 };
 
@@ -90,12 +91,7 @@ const getRawData = computed((): string => {
       const editorView = editor.getEditorView();
       if (editorView !== undefined && editorView !== null) {
         const raw = editorView.state.doc.toString();
-        if (
-          raw !== undefined &&
-          raw !== null &&
-          raw !== "" &&
-          !isResponseContent(raw)
-        ) {
+        if (!isResponseContent(raw)) {
           return raw;
         }
       }
@@ -103,12 +99,7 @@ const getRawData = computed((): string => {
 
     if (cachedEditorView.value !== undefined) {
       const raw = cachedEditorView.value.state.doc.toString();
-      if (
-        raw !== undefined &&
-        raw !== null &&
-        raw !== "" &&
-        !isResponseContent(raw)
-      ) {
+      if (!isResponseContent(raw)) {
         return raw;
       }
     }
