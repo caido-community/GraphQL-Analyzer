@@ -79,6 +79,11 @@ const parseHttpRaw = (raw: string) => {
   return { method, headers, body };
 };
 
+const isResponseContent = (raw: string | undefined): boolean => {
+  if (raw === undefined || raw === "") return true;
+  return raw.trimStart().startsWith("HTTP/");
+};
+
 const getRawData = computed((): string => {
   if (isReplayTab.value) {
     const editor = props.sdk.window?.getActiveEditor?.();
@@ -86,7 +91,16 @@ const getRawData = computed((): string => {
       const editorView = editor.getEditorView();
       if (editorView !== undefined && editorView !== null) {
         const raw = editorView.state.doc.toString();
-        if (raw !== undefined && raw !== null && raw !== "") return raw;
+        if (!isResponseContent(raw)) {
+          return raw;
+        }
+      }
+    }
+
+    if (cachedEditorView.value !== undefined) {
+      const raw = cachedEditorView.value.state.doc.toString();
+      if (!isResponseContent(raw)) {
+        return raw;
       }
     }
   }
