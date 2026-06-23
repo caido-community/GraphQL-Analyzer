@@ -19,8 +19,8 @@
     "vue": "3.4.37"
   },
   "devDependencies": {
-    "@caido/sdk-backend": "^0.51.0",
-    "@caido/sdk-frontend": "^0.51.2-beta.0",
+    "@caido/sdk-backend": "0.57.0",
+    "@caido/sdk-frontend": "0.57.1-beta.6",
     "backend": "workspace:*",
     "shared": "workspace:*",
     "vue-tsc": "2.0.29"
