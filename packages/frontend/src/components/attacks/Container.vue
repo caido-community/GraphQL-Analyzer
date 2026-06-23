@@ -1375,45 +1375,29 @@ const createFindingFromResult = async (result: AttackResult) => {
 };
 
 const sendToReplay = async (result: AttackResult) => {
-  try {
-    if (result.rawRequest === undefined || result.rawRequest === "") {
-      sdk.window.showToast("No request data available for replay", {
-        variant: "error",
-      });
-      return;
-    }
-
-    let domain = "Unknown";
-    try {
-      if (result.targetUrl) {
-        const url = new URL(result.targetUrl);
-        domain = url.hostname;
-      }
-    } catch (error) {
-      domain = "Unknown";
-    }
-
-    const replayResult = await replayService.createReplayFromRequest(
-      result.rawRequest,
-      domain,
-    );
-
-    if (replayResult.kind === "Ok") {
-      sdk.window.showToast(
-        `Created replay session: ${replayResult.value.sessionName}`,
-        { variant: "success" },
-      );
-    } else {
-      sdk.window.showToast(`Failed to create replay: ${replayResult.error}`, {
-        variant: "error",
-      });
-    }
-  } catch (error) {
-    sdk.window.showToast(
-      `Error sending to replay: ${error instanceof Error ? error.message : "Unknown error"}`,
-      { variant: "error" },
-    );
+  if (result.rawRequest === undefined || result.rawRequest === "") {
+    sdk.window.showToast("No request data available for replay", {
+      variant: "error",
+    });
+    return;
   }
+
+  const replayResult = await replayService.createReplayFromRequest(
+    result.rawRequest,
+    result.targetUrl,
+  );
+
+  if (replayResult.kind === "Error") {
+    sdk.window.showToast(`Failed to create replay: ${replayResult.error}`, {
+      variant: "error",
+    });
+    return;
+  }
+
+  sdk.window.showToast(
+    `Created replay session: ${replayResult.value.sessionName}`,
+    { variant: "success" },
+  );
 };
 
 const getAttackTypeLabel = (attackType: string) => {
