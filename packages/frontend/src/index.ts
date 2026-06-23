@@ -1,11 +1,13 @@
 import { Classic } from "@caido/primevue";
+import { type RequestDraft, type RequestFull } from "@caido/sdk-frontend";
 import PrimeVue from "primevue/config";
 import Tooltip from "primevue/tooltip";
-import { createApp } from "vue";
+import { type Component, createApp, markRaw } from "vue";
 
 import { SDKPlugin } from "./plugins/sdk";
 import "./styles/index.css";
 import type { FrontendSDK } from "./types";
+import { isGraphQLRequest } from "./utils/graphql";
 import App from "./views/App.vue";
 import GraphQLViewMode from "./views/GraphQLViewMode.vue";
 
@@ -39,69 +41,18 @@ export const init = (sdk: FrontendSDK) => {
     icon: "fas fa-project-diagram",
   });
 
-  // Detect whether a raw HTTP request contains a GraphQL query
-  function isGraphQLRequest(raw: string): boolean {
-    if (raw === "" || raw.trim() === "") return false;
-
-    // Split headers from body
-    let parts = raw.split("\r\n\r\n");
-    if (parts.length < 2) {
-      parts = raw.split("\n\n");
-      if (parts.length < 2) return false;
-    }
-
-    const headerSection = parts[0] ?? "";
-    const firstLine = headerSection.split(/\r?\n/)[0] ?? "";
-
-    // Must be a POST request
-    if (!firstLine.startsWith("POST ")) return false;
-
-    const separator = raw.includes("\r\n") ? "\r\n\r\n" : "\n\n";
-    const body = parts.slice(1).join(separator).trim();
-    if (!body) return false;
-
-    try {
-      const parsed = JSON.parse(body) as { query?: unknown };
-      return typeof parsed.query === "string" && parsed.query.trim() !== "";
-    } catch {
-      return false;
-    }
-  }
-
-  type ViewModeOptions = {
-    label: string;
-    view: { component: unknown };
-    when?: (...args: unknown[]) => boolean;
-  };
-
-  type ExtendedViewModeSDK = {
-    addRequestViewMode: (options: ViewModeOptions) => void;
-  };
-
-  const requestViewMode: ViewModeOptions = {
+  const viewMode = {
     label: "GraphQL",
-    view: { component: GraphQLViewMode },
-    when: (request: unknown) => {
-      const req = request as { raw?: string } | undefined;
-      return isGraphQLRequest(req?.raw ?? "");
-    },
+    view: { component: markRaw(GraphQLViewMode) as Component },
+    when: (request: RequestFull | RequestDraft) =>
+      isGraphQLRequest(request.raw),
   };
 
-  const surfaces = [
-    sdk.httpHistory,
-    sdk.replay,
-    sdk.search,
-    sdk.sitemap,
-    sdk.intercept,
-  ] as unknown as ExtendedViewModeSDK[];
-
-  for (const surface of surfaces) {
-    try {
-      surface.addRequestViewMode(requestViewMode);
-    } catch {
-      // ignore
-    }
-  }
+  sdk.httpHistory.addRequestViewMode(viewMode);
+  sdk.search.addRequestViewMode(viewMode);
+  sdk.sitemap.addRequestViewMode(viewMode);
+  sdk.replay.addRequestViewMode(viewMode);
+  sdk.intercept.addRequestViewMode(viewMode);
 
   sdk.commands.register("graphql-analyzer-scan", {
     name: "Scan GraphQL Endpoint",
