@@ -63,7 +63,9 @@ const isEditable = computed(
 );
 
 const isActuallyGraphQL = computed(
-  () => parsedHttp.value?.method === "POST" && graphqlData.value !== undefined,
+  () =>
+    parsedHttp.value?.method.toUpperCase() === "POST" &&
+    graphqlData.value !== undefined,
 );
 
 const endpoint = computed(() => {
@@ -112,6 +114,42 @@ const formatGraphQLQuery = (query: string): string => {
   }
 };
 
+const validateQuery = (query: string): string[] => {
+  const errors: string[] = [];
+
+  if (!query.trim()) {
+    errors.push("Query cannot be empty");
+    return errors;
+  }
+
+  const strippedQuery = query
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#"))
+    .join("\n")
+    .trim();
+
+  if (!strippedQuery) {
+    return errors;
+  }
+
+  const openBraces = (strippedQuery.match(/\{/g) || []).length;
+  const closeBraces = (strippedQuery.match(/\}/g) || []).length;
+
+  if (openBraces !== closeBraces) {
+    errors.push("Mismatched braces in query");
+  }
+
+  const hasValidOperation =
+    /^\s*(query|mutation|subscription)\s+/i.test(strippedQuery) ||
+    /^\s*\{/.test(strippedQuery);
+
+  if (!hasValidOperation) {
+    errors.push("Query must start with query, mutation, subscription, or {");
+  }
+
+  return errors;
+};
+
 const initializeData = () => {
   const data = graphqlData.value;
 
@@ -151,42 +189,6 @@ watch(editableQuery, () => {
   queryValidationErrors.value =
     editableQuery.value === "" ? [] : validateQuery(editableQuery.value);
 });
-
-const validateQuery = (query: string): string[] => {
-  const errors: string[] = [];
-
-  if (!query.trim()) {
-    errors.push("Query cannot be empty");
-    return errors;
-  }
-
-  const strippedQuery = query
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("#"))
-    .join("\n")
-    .trim();
-
-  if (!strippedQuery) {
-    return errors;
-  }
-
-  const openBraces = (strippedQuery.match(/\{/g) || []).length;
-  const closeBraces = (strippedQuery.match(/\}/g) || []).length;
-
-  if (openBraces !== closeBraces) {
-    errors.push("Mismatched braces in query");
-  }
-
-  const hasValidOperation =
-    /^\s*(query|mutation|subscription)\s+/i.test(strippedQuery) ||
-    /^\s*\{/.test(strippedQuery);
-
-  if (!hasValidOperation) {
-    errors.push("Query must start with query, mutation, subscription, or {");
-  }
-
-  return errors;
-};
 
 const parseQueryFields = (query: string) => {
   const fields: Array<{ name: string; type: string; description?: string }> =

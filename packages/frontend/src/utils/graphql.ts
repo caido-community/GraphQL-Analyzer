@@ -82,7 +82,7 @@ export const extractGraphQLOperation = (
     if (
       query.trim() !== "" ||
       hasOperationName ||
-      persistedQuery !== undefined
+      persistedQueryHash !== undefined
     ) {
       return {
         query,

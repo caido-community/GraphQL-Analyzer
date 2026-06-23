@@ -107,6 +107,14 @@ describe("extractGraphQLOperation", () => {
     });
   });
 
+  it("returns undefined for a persisted query without a hash", () => {
+    expect(
+      extractGraphQLOperation(
+        JSON.stringify({ extensions: { persistedQuery: {} } }),
+      ),
+    ).toBeUndefined();
+  });
+
   it("returns undefined for JSON without a query", () => {
     expect(
       extractGraphQLOperation(JSON.stringify({ data: 1 })),
