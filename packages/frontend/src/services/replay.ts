@@ -16,6 +16,13 @@ const parseConnection = (targetUrl: string): ConnectionInfo | undefined => {
   }
 
   const url = new URL(targetUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return undefined;
+  }
+  if (url.hostname === "") {
+    return undefined;
+  }
+
   const isTLS = url.protocol === "https:";
   const port = url.port !== "" ? Number(url.port) : isTLS ? 443 : 80;
 
