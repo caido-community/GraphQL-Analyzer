@@ -9,6 +9,7 @@ import { watchDebounced } from "@vueuse/core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import SelectButton from "primevue/selectbutton";
+import { INTROSPECTION_QUERY } from "shared";
 import { computed, ref, watch } from "vue";
 
 import CodeEditor from "../components/common/CodeEditor.vue";
@@ -430,6 +431,13 @@ watchDebounced(
     debounce: 400,
   },
 );
+
+const addIntrospectionQuery = () => {
+  activeTab.value = "Query";
+  editableOperationName.value = "IntrospectionQuery";
+  editableVariables.value = "{}";
+  editableQuery.value = formatGraphQLQuery(INTROSPECTION_QUERY);
+};
 </script>
 
 <template>
@@ -447,6 +455,15 @@ watchDebounced(
         </div>
 
         <div class="flex gap-1">
+          <Button
+            v-if="isEditable"
+            v-tooltip="'Add introspection query'"
+            icon="fas fa-magic"
+            size="small"
+            severity="secondary"
+            text
+            @click="addIntrospectionQuery"
+          />
           <Button
             v-tooltip="'Copy Query'"
             icon="fas fa-copy"
