@@ -2,8 +2,8 @@ import type {
   GraphQLSchema,
   IntrospectionField,
   IntrospectionSchema,
-  IntrospectionTypeRef,
 } from "shared";
+import { formatType } from "shared";
 
 import { generatePointsOfInterest } from "./analysis";
 
@@ -158,13 +158,3 @@ const parseField = (field: IntrospectionField) => ({
   rawType: field.type,
   rawField: field,
 });
-
-export const formatType = (type: IntrospectionTypeRef): string => {
-  if (type.kind === "NON_NULL" && type.ofType) {
-    return `${formatType(type.ofType)}!`;
-  }
-  if (type.kind === "LIST" && type.ofType) {
-    return `[${formatType(type.ofType)}]`;
-  }
-  return type.name ?? "Unknown";
-};

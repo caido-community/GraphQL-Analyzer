@@ -2,9 +2,17 @@ import type {
   GraphQLField,
   IntrospectionType,
   IntrospectionTypeRef,
-} from "shared";
+} from "./index";
 
-import { formatType } from "./parser";
+export const formatType = (type: IntrospectionTypeRef): string => {
+  if (type.kind === "NON_NULL" && type.ofType) {
+    return `${formatType(type.ofType)}!`;
+  }
+  if (type.kind === "LIST" && type.ofType) {
+    return `[${formatType(type.ofType)}]`;
+  }
+  return type.name ?? "Unknown";
+};
 
 export function generateGraphQLQuery(
   field: GraphQLField & {
@@ -15,26 +23,40 @@ export function generateGraphQLQuery(
   allTypes: IntrospectionType[],
   maxDepth: number = 5,
 ): string {
-  const lines: string[] = [];
   const capitalize = (str: string) =>
     str.charAt(0).toUpperCase() + str.slice(1);
 
   const args = formatFieldArguments(field.args ?? []);
-  lines.push(`${operationType} ${capitalize(field.name)}${args} {`);
+  const queryArgs = formatQueryArguments(field.args ?? []);
 
-  lines.push(`  ${field.name}${formatQueryArguments(field.args ?? [])} {`);
+  const typeName = getTypeName(field.rawType ?? field.type ?? "");
+  const returnType =
+    typeName !== undefined
+      ? allTypes.find((t) => t.name === typeName)
+      : undefined;
+  const isLeaf = returnType?.kind === "SCALAR" || returnType?.kind === "ENUM";
 
-  const visitedTypes = new Set<string>();
-  const nestedFields = generateNestedFields(
-    field.rawType || field.type,
-    allTypes,
-    maxDepth,
-    2,
-    visitedTypes,
-  );
-  lines.push(...nestedFields);
+  const lines: string[] = [
+    `${operationType} ${capitalize(field.name)}${args} {`,
+  ];
 
-  lines.push("  }");
+  if (isLeaf) {
+    lines.push(`  ${field.name}${queryArgs}`);
+  } else {
+    const nestedFields = generateNestedFields(
+      field.rawType ?? field.type,
+      allTypes,
+      maxDepth,
+      2,
+      new Set<string>(),
+    );
+    const selection =
+      nestedFields.length > 0 ? nestedFields : ["    __typename"];
+    lines.push(`  ${field.name}${queryArgs} {`);
+    lines.push(...selection);
+    lines.push("  }");
+  }
+
   lines.push("}");
 
   return lines.join("\n");
@@ -52,10 +74,8 @@ function generateNestedFields(
   const typeName = getTypeName(typeRef);
   if (typeName === undefined) return [];
 
-  // Prevent infinite recursion
   if (visitedTypes.has(typeName)) return [];
 
-  // Track visited types to prevent cycles
   visitedTypes.add(typeName);
 
   const type = allTypes.find((t) => t.name === typeName);
@@ -65,10 +85,8 @@ function generateNestedFields(
   const indent = "  ".repeat(currentDepth);
 
   for (const field of type.fields) {
-    // Skip deprecated fields
     if (field.isDeprecated === true) continue;
 
-    // Skip fields that require arguments
     if (field.args !== undefined && field.args.length > 0) {
       const requiredArgs = field.args.filter(
         (arg) => arg.type.kind === "NON_NULL",

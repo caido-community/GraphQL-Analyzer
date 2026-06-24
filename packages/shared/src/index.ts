@@ -1,3 +1,5 @@
+export { formatType, generateGraphQLQuery } from "./generator";
+
 export type Result<T> =
   | { kind: "Error"; error: string }
   | { kind: "Ok"; value: T };

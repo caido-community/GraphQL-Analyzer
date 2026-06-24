@@ -1,14 +1,7 @@
 import type { SDK } from "caido:plugin";
-import type {
-  GraphQLField,
-  GraphQLSchema,
-  IntrospectionType,
-  IntrospectionTypeRef,
-  Result,
-} from "shared";
+import type { GraphQLSchema, Result } from "shared";
 
 import { GraphQLClient } from "./client";
-import { generateGraphQLQuery } from "./generator";
 
 export class GraphQLService {
   private client: GraphQLClient;
@@ -33,18 +26,6 @@ export class GraphQLService {
     Result<{ supportsIntrospection: boolean; schema?: GraphQLSchema }>
   > {
     return this.client.testEndpoint(url, customHeaders);
-  }
-
-  generateGraphQLQuery(
-    field: GraphQLField & {
-      rawType?: IntrospectionTypeRef;
-      type?: IntrospectionTypeRef | string;
-    },
-    operationType: "query" | "mutation" | "subscription",
-    allTypes: IntrospectionType[],
-    maxDepth: number = 5,
-  ): string {
-    return generateGraphQLQuery(field, operationType, allTypes, maxDepth);
   }
 
   async executeQuery(

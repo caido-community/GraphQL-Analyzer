@@ -1,4 +1,5 @@
 import type { GraphQLField, GraphQLType, PointOfInterest } from "shared";
+import { generateGraphQLQuery } from "shared";
 import { ref } from "vue";
 
 import type { ExplorerSession } from "./useSessions";
@@ -12,38 +13,39 @@ export const useCodeFormatter = (selectedSession: {
   const sdk = useSDK();
   const storageService = createStorageService(sdk);
   const selectedCode = ref("");
+  const selectedQuery = ref<string | undefined>(undefined);
+  const selectedVariables = ref<Record<string, string> | undefined>(undefined);
   const selectedType = ref("");
   const selectedLanguage = ref<"json" | "javascript" | "graphql">("json");
 
-  const formatGraphQLField = async (
+  const formatGraphQLField = (
     field: GraphQLField & { rawIntrospectionData?: unknown },
     type: "query" | "mutation" | "subscription",
-  ): Promise<string> => {
+  ): { code: string; query?: string } => {
     const schema = selectedSession.value?.schema;
     if (schema?.allTypes === undefined) {
-      const dataToShow =
-        (field as { rawIntrospectionData?: unknown }).rawIntrospectionData ??
-        field;
-      return JSON.stringify(dataToShow, null, 2);
+      const dataToShow = field.rawIntrospectionData ?? field;
+      return { code: JSON.stringify(dataToShow, null, 2) };
     }
 
-    try {
-      const maxDepth =
-        storageService.get<number>("graphql-analyzer-max-depth") ?? 5;
+    const maxDepth =
+      storageService.get<number>("graphql-analyzer-max-depth") ?? 5;
+    const generatedQuery = generateGraphQLQuery(
+      field,
+      type,
+      schema.allTypes,
+      maxDepth,
+    );
+    return { code: generatedQuery, query: generatedQuery };
+  };
 
-      const generatedQuery = await sdk.backend.generateGraphQLQuery(
-        field,
-        type,
-        schema.allTypes,
-        maxDepth,
-      );
-      return generatedQuery;
-    } catch (error) {
-      const dataToShow =
-        (field as { rawIntrospectionData?: unknown }).rawIntrospectionData ??
-        field;
-      return JSON.stringify(dataToShow, null, 2);
-    }
+  const buildVariableScaffold = (
+    field: GraphQLField,
+  ): Record<string, string> | undefined => {
+    if (field.args === undefined || field.args.length === 0) return undefined;
+    return Object.fromEntries(
+      field.args.map((arg): [string, string] => [arg.name, ""]),
+    );
   };
 
   const formatObjectType = (
@@ -70,39 +72,28 @@ export const useCodeFormatter = (selectedSession: {
     content: unknown;
   };
 
-  const handleNodeSelect = async (node: { data?: TreeNodeData }) => {
+  const handleNodeSelect = (node: { data?: TreeNodeData }) => {
     if (node.data !== undefined) {
       selectedType.value = node.data.type;
+      selectedQuery.value = undefined;
+      selectedVariables.value = undefined;
 
       switch (node.data.type) {
-        case "query": {
-          selectedCode.value = await formatGraphQLField(
-            node.data.content as GraphQLField & {
-              rawIntrospectionData?: unknown;
-            },
-            "query",
-          );
-          selectedLanguage.value = "graphql";
-          break;
-        }
-        case "mutation": {
-          selectedCode.value = await formatGraphQLField(
-            node.data.content as GraphQLField & {
-              rawIntrospectionData?: unknown;
-            },
-            "mutation",
-          );
-          selectedLanguage.value = "graphql";
-          break;
-        }
+        case "query":
+        case "mutation":
         case "subscription": {
-          selectedCode.value = await formatGraphQLField(
-            node.data.content as GraphQLField & {
-              rawIntrospectionData?: unknown;
-            },
-            "subscription",
-          );
-          selectedLanguage.value = "graphql";
+          const field = node.data.content as GraphQLField & {
+            rawIntrospectionData?: unknown;
+          };
+          const result = formatGraphQLField(field, node.data.type);
+          selectedCode.value = result.code;
+          selectedQuery.value = result.query;
+          selectedVariables.value =
+            result.query !== undefined
+              ? buildVariableScaffold(field)
+              : undefined;
+          selectedLanguage.value =
+            result.query !== undefined ? "graphql" : "json";
           break;
         }
         case "object-type": {
@@ -149,12 +140,16 @@ export const useCodeFormatter = (selectedSession: {
 
   const clearCode = () => {
     selectedCode.value = "";
+    selectedQuery.value = undefined;
+    selectedVariables.value = undefined;
     selectedType.value = "";
     selectedLanguage.value = "json";
   };
 
   return {
     selectedCode,
+    selectedQuery,
+    selectedVariables,
     selectedType,
     selectedLanguage,
     handleNodeSelect,

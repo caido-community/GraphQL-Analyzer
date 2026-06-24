@@ -5,7 +5,6 @@ import {
   createCaidoFinding,
   executeGraphQLAttacks,
   executeGraphQLQuery,
-  generateGraphQLQuery,
   getAttackStatus,
   getAttackTemplates,
   getRequestInfo,
@@ -41,7 +40,6 @@ export { type BackendEvents } from "./types";
 export type API = DefineAPI<{
   testGraphQLEndpoint: typeof testGraphQLEndpoint;
   testGraphQLEndpointFromRequest: typeof testGraphQLEndpointFromRequest;
-  generateGraphQLQuery: typeof generateGraphQLQuery;
   executeGraphQLQuery: typeof executeGraphQLQuery;
   executeGraphQLAttacks: typeof executeGraphQLAttacks;
   startGraphQLAttacks: typeof startGraphQLAttacks;
@@ -59,7 +57,6 @@ export function init(sdk: SDK<API>) {
     "testGraphQLEndpointFromRequest",
     testGraphQLEndpointFromRequest,
   );
-  sdk.api.register("generateGraphQLQuery", generateGraphQLQuery);
   sdk.api.register("executeGraphQLQuery", executeGraphQLQuery);
   sdk.api.register("executeGraphQLAttacks", executeGraphQLAttacks);
   sdk.api.register("startGraphQLAttacks", startGraphQLAttacks);
