@@ -9,6 +9,7 @@
     "@caido/primevue": "0.1.2",
     "@codemirror/lang-javascript": "6.2.1",
     "@codemirror/lang-json": "6.0.1",
+    "@codemirror/language": "6.11.3",
     "@codemirror/state": "6.4.1",
     "@codemirror/theme-one-dark": "6.1.2",
     "@codemirror/view": "6.28.1",
@@ -16,11 +17,13 @@
     "@vueuse/core": "10.5.0",
     "codemirror": "6.0.1",
     "primevue": "4.1.0",
-    "vue": "3.4.37"
+    "ts-http-forge": "0.1.7",
+    "vue": "3.4.37",
+    "zod": "4.3.6"
   },
   "devDependencies": {
-    "@caido/sdk-backend": "^0.51.0",
-    "@caido/sdk-frontend": "^0.51.2-beta.0",
+    "@caido/sdk-backend": "0.57.0",
+    "@caido/sdk-frontend": "0.57.1-beta.6",
     "backend": "workspace:*",
     "shared": "workspace:*",
     "vue-tsc": "2.0.29"

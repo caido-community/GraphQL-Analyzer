@@ -1,18 +1,28 @@
 <script setup lang="ts">
-import { type API, type RequestFull } from "@caido/sdk-frontend";
+import {
+  type API,
+  type RequestDraft,
+  type RequestFull,
+} from "@caido/sdk-frontend";
+import { type EditorView } from "@codemirror/view";
+import { watchDebounced } from "@vueuse/core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
-import TabPanel from "primevue/tabpanel";
-import TabView from "primevue/tabview";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import SelectButton from "primevue/selectbutton";
+import { INTROSPECTION_QUERY } from "shared";
+import { HttpForge } from "ts-http-forge";
+import { computed, ref, watch } from "vue";
 
 import CodeEditor from "../components/common/CodeEditor.vue";
 import { createStorageService } from "../services/storage";
 import type { FrontendSDK } from "../types";
+import { extractGraphQLOperation, parseHttpMessage } from "../utils/graphql";
 
 const props = defineProps<{
   sdk: API;
-  request: RequestFull;
+  request?: RequestFull;
+  draft?: RequestDraft;
+  view: EditorView;
 }>();
 
 const storageService = createStorageService(
@@ -23,196 +33,51 @@ const editableQuery = ref("");
 const editableVariables = ref("{}");
 const editableOperationName = ref("");
 const queryValidationErrors = ref<string[]>([]);
-const activeTab = ref(0);
-type MinimalEditorView = {
-  state: { doc: { toString(): string; length: number } };
-  dispatch(tr: { changes: { from: number; to: number; insert: string } }): void;
-};
+const tabs = ["Query", "Variables", "Request Info"];
+const activeTab = ref("Query");
 
-const cachedEditorView = ref<MinimalEditorView | undefined>(undefined);
-
-const originalQuery = ref("");
-const originalVariables = ref("{}");
-const originalOperationName = ref("");
-
-const isReplayTab = computed(() => window.location.hash.includes("/replay"));
-
-const parseHttpRaw = (raw: string) => {
-  if (raw === undefined || raw === "") return undefined;
-
-  let parts = raw.split("\r\n\r\n");
-  if (parts.length < 2) {
-    parts = raw.split("\n\n");
-    if (parts.length < 2) return undefined;
-  }
-
-  const headerSection = parts[0];
-  const separator = raw.includes("\r\n") ? "\r\n\r\n" : "\n\n";
-  const body = parts.slice(1).join(separator);
-
-  let lines = headerSection?.split("\r\n") ?? [];
-  if (lines.length === 1 && lines[0] === headerSection) {
-    lines = headerSection?.split("\n") ?? [];
-  }
-  const firstLine = lines[0];
-  const methodMatch =
-    firstLine !== undefined ? firstLine.match(/^(\w+)\s+/) : null;
-  const method =
-    methodMatch !== null && methodMatch[1] !== undefined
-      ? methodMatch[1]
-      : "UNKNOWN";
-
-  const headers: Record<string, string> = {};
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === undefined || line === "") continue;
-    const colonIndex = line.indexOf(":");
-    if (colonIndex > 0) {
-      const name = line.substring(0, colonIndex).trim();
-      const value = line.substring(colonIndex + 1).trim();
-      if (name !== "" && value !== "") {
-        headers[name] = value;
-      }
-    }
-  }
-
-  return { method, headers, body };
-};
-
-const isResponseContent = (raw: string | undefined): boolean => {
-  if (raw === undefined || raw === "") return true;
-  return raw.trimStart().startsWith("HTTP/");
-};
+const lastWrittenRaw = ref("");
+const initialized = ref({ query: "", variables: "{}", operationName: "" });
 
 const getRawData = computed((): string => {
-  if (isReplayTab.value) {
-    const editor = props.sdk.window?.getActiveEditor?.();
-    if (editor !== undefined && editor !== null) {
-      const editorView = editor.getEditorView();
-      if (editorView !== undefined && editorView !== null) {
-        const raw = editorView.state.doc.toString();
-        if (!isResponseContent(raw)) {
-          return raw;
-        }
-      }
-    }
-
-    if (cachedEditorView.value !== undefined) {
-      const raw = cachedEditorView.value.state.doc.toString();
-      if (!isResponseContent(raw)) {
-        return raw;
-      }
-    }
+  if (props.draft !== undefined) {
+    return props.draft.raw;
   }
-
-  if (props.request?.raw) {
-    return props.request.raw;
-  }
-
-  return "";
+  return props.request?.raw ?? "";
 });
 
-const tryGetEditorView = () => {
-  const editor = props.sdk.window?.getActiveEditor?.();
-  if (editor !== undefined && editor !== null) {
-    const editorView = editor.getEditorView();
-    if (editorView !== undefined && editorView !== null) {
-      cachedEditorView.value = editorView;
-      return editorView;
-    }
-  }
-  return cachedEditorView.value;
-};
-
-const parsedHttp = computed(() => {
-  const raw = getRawData.value;
-  if (raw === "" || raw.trim() === "") return undefined;
-  const parsed = parseHttpRaw(raw);
-  return parsed;
-});
-
-const isGraphQLQuery = (text: string): boolean => {
-  if (!text || text.trim() === "") return false;
-
-  const trimmed = text.trim();
-
-  const operationStartPattern =
-    /^\s*(query|mutation|subscription|fragment)\s+[\w]+\s*[({]/i;
-  if (operationStartPattern.test(trimmed)) {
-    return true;
-  }
-
-  const operationWithoutNamePattern =
-    /^\s*(query|mutation|subscription)\s*[({]/i;
-  if (operationWithoutNamePattern.test(trimmed)) {
-    return true;
-  }
-
-  const directQueryPattern = /^\s*{\s*\w/i;
-  if (directQueryPattern.test(trimmed)) {
-    return true;
-  }
-
-  const hasOperationKeyword =
-    /(query|mutation|subscription|fragment)\s+[\w]+/i.test(trimmed);
-  const hasGraphQLStructure = trimmed.includes("{") && trimmed.includes("}");
-  const hasFieldLikePattern = /\w+\s*[:{(]/.test(trimmed);
-
-  if (hasOperationKeyword && hasGraphQLStructure && hasFieldLikePattern) {
-    return true;
-  }
-
-  if (hasGraphQLStructure && hasFieldLikePattern && trimmed.length > 10) {
-    const graphQLFieldPattern = /\w+\s*\{|\w+\s*\(|\w+\s*:/;
-    if (graphQLFieldPattern.test(trimmed)) {
-      return true;
-    }
-  }
-
-  return false;
-};
+const parsedHttp = computed(() => parseHttpMessage(getRawData.value));
 
 const graphqlData = computed(() => {
   const parsed = parsedHttp.value;
-  if (parsed === undefined || parsed.body === undefined || parsed.body === "") {
-    return undefined;
-  }
-
-  const body = parsed.body.trim();
-  if (body === "") return undefined;
-
-  try {
-    const bodyJson = JSON.parse(body) as {
-      query?: string;
-      variables?: unknown;
-      operationName?: string;
-    };
-    if (
-      bodyJson.query !== undefined &&
-      typeof bodyJson.query === "string" &&
-      bodyJson.query.trim() !== ""
-    ) {
-      return bodyJson;
-    }
-
-    if (isGraphQLQuery(body)) {
-      return { query: body };
-    }
-  } catch {
-    if (isGraphQLQuery(body)) {
-      return { query: body };
-    }
-  }
-
-  return undefined;
+  if (parsed === undefined) return undefined;
+  return extractGraphQLOperation(parsed.body);
 });
 
-const isActuallyGraphQL = computed(() => {
-  if (props.request === undefined || props.request === null) return false;
-  const parsed = parsedHttp.value;
-  if (parsed === undefined) return false;
+const isPersistedQuery = computed(
+  () =>
+    graphqlData.value?.persistedQueryHash !== undefined &&
+    graphqlData.value.query === "",
+);
 
-  return parsed.method === "POST" && graphqlData.value !== undefined;
+const isEditable = computed(
+  () => props.draft !== undefined && !isPersistedQuery.value,
+);
+
+const isActuallyGraphQL = computed(
+  () =>
+    parsedHttp.value?.method.toUpperCase() === "POST" &&
+    graphqlData.value !== undefined,
+);
+
+const endpoint = computed(() => {
+  const source = props.draft ?? props.request;
+  return {
+    method: parsedHttp.value?.method ?? "POST",
+    host: source?.host ?? "unknown",
+    path: source?.path ?? "/",
+    port: source?.port ?? (source?.isTls === true ? 443 : 80),
+  };
 });
 
 const formatGraphQLQuery = (query: string): string => {
@@ -251,94 +116,6 @@ const formatGraphQLQuery = (query: string): string => {
   }
 };
 
-const initializeData = () => {
-  if (graphqlData.value?.query !== undefined) {
-    const formatted = formatGraphQLQuery(graphqlData.value.query);
-    editableQuery.value = formatted;
-    originalQuery.value = formatted;
-  } else {
-    editableQuery.value = "";
-    originalQuery.value = "";
-  }
-
-  if (graphqlData.value?.variables !== undefined) {
-    if (graphqlData.value.variables === null) {
-      editableVariables.value = "null";
-      originalVariables.value = "null";
-    } else {
-      const varsStr = JSON.stringify(graphqlData.value.variables, null, 2);
-      editableVariables.value = varsStr;
-      originalVariables.value = varsStr;
-    }
-  } else {
-    editableVariables.value = "{}";
-    originalVariables.value = "{}";
-  }
-
-  if (graphqlData.value?.operationName !== undefined) {
-    editableOperationName.value = graphqlData.value.operationName;
-    originalOperationName.value = graphqlData.value.operationName;
-  } else {
-    editableOperationName.value = "";
-    originalOperationName.value = "";
-  }
-
-  if (editableQuery.value) {
-    queryValidationErrors.value = validateQuery(editableQuery.value);
-  }
-};
-
-onMounted(async () => {
-  await nextTick();
-  tryGetEditorView();
-  initializeData();
-});
-
-watch(
-  () => graphqlData.value,
-  (newValue) => {
-    if (newValue) {
-      const currentQuery = formatGraphQLQuery(
-        newValue.query !== undefined && newValue.query !== null
-          ? newValue.query
-          : "",
-      );
-      const currentVars =
-        newValue.variables !== undefined
-          ? newValue.variables === null
-            ? "null"
-            : JSON.stringify(newValue.variables, null, 2)
-          : "{}";
-      const currentOpName =
-        newValue.operationName !== undefined && newValue.operationName !== null
-          ? newValue.operationName
-          : "";
-
-      if (
-        editableQuery.value !== currentQuery ||
-        editableVariables.value !== currentVars ||
-        editableOperationName.value !== currentOpName
-      ) {
-        initializeData();
-      }
-    } else if (editableQuery.value !== "" || editableVariables.value !== "{}") {
-      editableQuery.value = "";
-      editableVariables.value = "{}";
-      editableOperationName.value = "";
-      originalQuery.value = "";
-      originalVariables.value = "{}";
-      originalOperationName.value = "";
-    }
-  },
-  { immediate: true },
-);
-
-watch(editableQuery, () => {
-  if (editableQuery.value) {
-    queryValidationErrors.value = validateQuery(editableQuery.value);
-  }
-});
-
 const validateQuery = (query: string): string[] => {
   const errors: string[] = [];
 
@@ -374,6 +151,46 @@ const validateQuery = (query: string): string[] => {
 
   return errors;
 };
+
+const initializeData = () => {
+  const data = graphqlData.value;
+
+  editableQuery.value =
+    data?.query !== undefined ? formatGraphQLQuery(data.query) : "";
+
+  if (data?.variables === undefined) {
+    editableVariables.value = "{}";
+  } else if (data.variables === null) {
+    editableVariables.value = "null";
+  } else {
+    editableVariables.value = JSON.stringify(data.variables, null, 2);
+  }
+
+  editableOperationName.value = data?.operationName ?? "";
+
+  queryValidationErrors.value =
+    editableQuery.value === "" ? [] : validateQuery(editableQuery.value);
+
+  initialized.value = {
+    query: editableQuery.value,
+    variables: editableVariables.value,
+    operationName: editableOperationName.value,
+  };
+};
+
+watch(
+  getRawData,
+  () => {
+    if (getRawData.value === lastWrittenRaw.value) return;
+    initializeData();
+  },
+  { immediate: true },
+);
+
+watch(editableQuery, () => {
+  queryValidationErrors.value =
+    editableQuery.value === "" ? [] : validateQuery(editableQuery.value);
+});
 
 const parseQueryFields = (query: string) => {
   const fields: Array<{ name: string; type: string; description?: string }> =
@@ -432,30 +249,6 @@ const parseQueryFields = (query: string) => {
 
 const queryFields = computed(() => parseQueryFields(editableQuery.value));
 
-const isImportantHeader = (headerName: string): boolean => {
-  const name = headerName.toLowerCase();
-  return [
-    "authorization",
-    "x-api-key",
-    "x-auth-token",
-    "x-access-token",
-    "cookie",
-    "x-csrf-token",
-    "x-xsrf-token",
-    "x-apollo-tracing",
-    "x-hasura-admin-secret",
-    "x-hasura-user-id",
-    "x-hasura-role",
-  ].some((important) => name.includes(important));
-};
-
-const hasImportantHeaders = computed(() => {
-  if (!parsedHttp.value?.headers) return false;
-  return Object.keys(parsedHttp.value.headers).some((key) =>
-    isImportantHeader(key),
-  );
-});
-
 const copyQuery = async () => {
   try {
     if (!editableQuery.value || editableQuery.value.trim() === "") {
@@ -466,7 +259,9 @@ const copyQuery = async () => {
     await navigator.clipboard.writeText(editableQuery.value);
     props.sdk.window.showToast(
       `Copied ${editableQuery.value.length} characters to clipboard`,
-      { variant: "success" },
+      {
+        variant: "success",
+      },
     );
   } catch (error) {
     props.sdk.window.showToast("Failed to copy query", { variant: "error" });
@@ -545,16 +340,7 @@ const saveToAttacker = async () => {
   });
 };
 
-const hasChanges = computed(() => {
-  if (!isReplayTab.value) return false;
-  return (
-    editableQuery.value !== originalQuery.value ||
-    editableVariables.value !== originalVariables.value ||
-    editableOperationName.value !== originalOperationName.value
-  );
-});
-
-const reconstructGraphQLBody = (): string => {
+const reconstructGraphQLBody = (): string | undefined => {
   const body: {
     query: string;
     variables?: unknown;
@@ -573,10 +359,7 @@ const reconstructGraphQLBody = (): string => {
         body.variables = parsedVars;
       }
     } catch {
-      props.sdk.window.showToast("Invalid JSON in variables", {
-        variant: "error",
-      });
-      throw new Error("Invalid JSON in variables");
+      return undefined;
     }
   }
 
@@ -587,97 +370,56 @@ const reconstructGraphQLBody = (): string => {
   return JSON.stringify(body);
 };
 
-const reconstructRawHttpRequest = (newBody: string): string => {
-  const parsed = parsedHttp.value;
-  if (
-    parsed === undefined ||
-    props.request === undefined ||
-    props.request === null
-  ) {
-    throw new Error("Failed to parse HTTP request");
-  }
+const reconstructRawHttpRequest = (newBody: string): string | undefined => {
+  const raw = getRawData.value;
+  if (raw.trim() === "") return undefined;
 
-  const headers = parsed.headers;
-  const method = parsed.method;
-  const path = props.request?.path || "/";
-
-  const headerLines: string[] = [];
-  headerLines.push(`${method} ${path} HTTP/1.1`);
-
-  let hasContentType = false;
-  for (const [key, value] of Object.entries(headers)) {
-    const lowerKey = key.toLowerCase();
-    if (lowerKey === "content-length") {
-      continue;
-    }
-    if (lowerKey === "content-type") {
-      hasContentType = true;
-    }
-    headerLines.push(`${key}: ${value}`);
-  }
-
-  const bodyBytes = new TextEncoder().encode(newBody);
-  headerLines.push(`Content-Length: ${bodyBytes.length}`);
-  if (!hasContentType) {
-    headerLines.push("Content-Type: application/json");
-  }
-
-  return headerLines.join("\r\n") + "\r\n\r\n" + newBody;
+  const length = new TextEncoder().encode(newBody).length;
+  return HttpForge.create(raw)
+    .body(newBody)
+    .setHeader("Content-Length", String(length))
+    .build();
 };
 
-const saveChanges = () => {
-  if (!isReplayTab.value) return;
-  if (!hasChanges.value) return;
+const applyEdit = () => {
+  if (!isEditable.value) return;
+  if (editableQuery.value.trim() === "") return;
+  if (queryValidationErrors.value.length > 0) return;
 
-  try {
-    if (!editableQuery.value.trim()) {
-      props.sdk.window.showToast("Query cannot be empty", {
-        variant: "error",
-      });
-      return;
-    }
-
-    if (queryValidationErrors.value.length > 0) {
-      props.sdk.window.showToast("Please fix validation errors before saving", {
-        variant: "error",
-      });
-      return;
-    }
-
-    const newBody = reconstructGraphQLBody();
-    const newRaw = reconstructRawHttpRequest(newBody);
-
-    const editorView = tryGetEditorView();
-
-    if (editorView !== undefined && editorView !== null) {
-      editorView.dispatch({
-        changes: {
-          from: 0,
-          to: editorView.state.doc.length,
-          insert: newRaw,
-        },
-      });
-
-      originalQuery.value = editableQuery.value;
-      originalVariables.value = editableVariables.value;
-      originalOperationName.value = editableOperationName.value;
-
-      props.sdk.window.showToast("Request updated successfully", {
-        variant: "success",
-      });
-    } else {
-      props.sdk.window.showToast(
-        "Switch to the Raw tab first, then back to GraphQL to enable editing.",
-        { variant: "warning" },
-      );
-    }
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    props.sdk.window.showToast(`Failed to update request: ${errorMessage}`, {
-      variant: "error",
-    });
+  if (
+    editableQuery.value === initialized.value.query &&
+    editableVariables.value === initialized.value.variables &&
+    editableOperationName.value === initialized.value.operationName
+  ) {
+    return;
   }
+
+  const newBody = reconstructGraphQLBody();
+  if (newBody === undefined) return;
+
+  const newRaw = reconstructRawHttpRequest(newBody);
+  if (newRaw === undefined) return;
+  if (newRaw === props.view.state.doc.toString()) return;
+
+  lastWrittenRaw.value = newRaw;
+  props.view.dispatch({
+    changes: { from: 0, to: props.view.state.doc.length, insert: newRaw },
+  });
+};
+
+watchDebounced(
+  [editableQuery, editableVariables, editableOperationName],
+  () => applyEdit(),
+  {
+    debounce: 400,
+  },
+);
+
+const addIntrospectionQuery = () => {
+  activeTab.value = "Query";
+  editableOperationName.value = "IntrospectionQuery";
+  editableVariables.value = "{}";
+  editableQuery.value = formatGraphQLQuery(INTROSPECTION_QUERY);
 };
 </script>
 
@@ -687,25 +429,24 @@ const saveChanges = () => {
       <div
         class="flex items-center justify-between p-2 border-b border-surface-600 flex-shrink-0"
       >
-        <div class="flex items-center gap-2 text-surface-300">
-          <i class="fas fa-project-diagram text-primary-400"></i>
-          <span class="text-sm font-medium"
-            >{{ parsedHttp?.method || "POST" }} {{ request?.host || "unknown"
-            }}{{ request?.path || "/" }}</span
-          >
+        <div class="flex items-center gap-2">
+          <SelectButton
+            v-model="activeTab"
+            :options="tabs"
+            :allow-empty="false"
+          />
         </div>
 
         <div class="flex gap-1">
           <Button
-            v-if="isReplayTab && hasChanges"
-            v-tooltip="'Save Changes'"
-            icon="fas fa-save"
+            v-if="isEditable"
+            v-tooltip="'Add introspection query'"
+            icon="fas fa-magic"
             size="small"
-            severity="primary"
-            @click="saveChanges"
-          >
-            Save
-          </Button>
+            severity="secondary"
+            text
+            @click="addIntrospectionQuery"
+          />
           <Button
             v-tooltip="'Copy Query'"
             icon="fas fa-copy"
@@ -733,27 +474,19 @@ const saveChanges = () => {
         </div>
       </div>
 
-      <div class="flex-1 min-h-0 overflow-hidden">
-        <TabView
-          v-model="activeTab"
-          class="h-full"
-          :pt="{
-            root: { class: 'h-full flex flex-col' },
-            navContainer: { class: 'flex-shrink-0' },
-            panelContainer: { class: 'flex-1 min-h-0 overflow-hidden' },
-          }"
-        >
-          <TabPanel header="Query" :pt="{ content: { class: 'h-full p-0' } }">
+      <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0 overflow-hidden">
+          <div v-show="activeTab === 'Query'" class="h-full">
             <div class="h-full flex flex-col p-2">
               <div
-                v-if="isReplayTab || graphqlData?.operationName"
+                v-if="isEditable || graphqlData?.operationName"
                 class="mb-2 flex-shrink-0"
               >
                 <label class="block text-sm font-medium text-surface-200 mb-1">
                   Operation Name
                 </label>
                 <InputText
-                  v-if="isReplayTab"
+                  v-if="isEditable"
                   v-model="editableOperationName"
                   class="w-full"
                   placeholder="Enter operation name (optional)"
@@ -786,24 +519,36 @@ const saveChanges = () => {
               </div>
 
               <div
+                v-if="isPersistedQuery"
+                class="flex-1 min-h-0 border border-surface-600 rounded bg-surface-900 p-4 flex flex-col items-center justify-center text-center"
+              >
+                <i class="fas fa-fingerprint text-2xl text-info-400 mb-2"></i>
+                <div class="text-sm text-surface-200">
+                  Persisted query. The query text is not sent inline.
+                </div>
+                <div
+                  class="text-xs text-surface-400 mt-1 font-mono break-all max-w-full"
+                >
+                  SHA-256: {{ graphqlData?.persistedQueryHash }}
+                </div>
+              </div>
+              <div
+                v-else
                 class="flex-1 min-h-0 border border-surface-600 rounded overflow-hidden bg-surface-900"
               >
                 <CodeEditor
                   :content="editableQuery"
                   language="graphql"
-                  :read-only="!isReplayTab"
+                  :read-only="!isEditable"
                   :font-size="12"
                   class="h-full w-full"
                   @update:content="editableQuery = $event"
                 />
               </div>
             </div>
-          </TabPanel>
+          </div>
 
-          <TabPanel
-            header="Variables"
-            :pt="{ content: { class: 'h-full p-0' } }"
-          >
+          <div v-show="activeTab === 'Variables'" class="h-full">
             <div class="h-full flex gap-2 p-2">
               <div class="flex-1 min-w-0 flex flex-col">
                 <div class="mb-2 flex-shrink-0">
@@ -820,7 +565,7 @@ const saveChanges = () => {
                   <CodeEditor
                     :content="editableVariables"
                     language="json"
-                    :read-only="!isReplayTab"
+                    :read-only="!isEditable"
                     :font-size="12"
                     class="h-full w-full"
                     @update:content="editableVariables = $event"
@@ -873,12 +618,9 @@ const saveChanges = () => {
                 </div>
               </div>
             </div>
-          </TabPanel>
+          </div>
 
-          <TabPanel
-            header="Request Info"
-            :pt="{ content: { class: 'h-full p-0' } }"
-          >
+          <div v-show="activeTab === 'Request Info'" class="h-full">
             <div class="h-full overflow-auto p-2">
               <div class="space-y-3">
                 <div
@@ -907,78 +649,33 @@ const saveChanges = () => {
                     <div>
                       <div class="text-xs text-surface-400 mb-1">Method</div>
                       <div class="font-mono text-surface-100">
-                        {{ parsedHttp?.method || "POST" }}
+                        {{ endpoint.method }}
                       </div>
                     </div>
                     <div>
                       <div class="text-xs text-surface-400 mb-1">Host</div>
                       <div class="font-mono text-surface-100 break-all">
-                        {{ request?.host || "unknown" }}
+                        {{ endpoint.host }}
                       </div>
                     </div>
                     <div>
                       <div class="text-xs text-surface-400 mb-1">Path</div>
                       <div class="font-mono text-surface-100 break-all">
-                        {{ request?.path || "/" }}
+                        {{ endpoint.path }}
                       </div>
                     </div>
                     <div>
                       <div class="text-xs text-surface-400 mb-1">Port</div>
                       <div class="font-mono text-surface-100">
-                        {{
-                          request?.port || (request?.port === 443 ? 443 : 80)
-                        }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="border border-surface-600 rounded p-3">
-                  <h4
-                    class="text-sm font-medium text-surface-200 mb-2 flex items-center gap-2"
-                  >
-                    <i class="fas fa-shield-alt text-warning-400"></i>
-                    Security Headers
-                  </h4>
-                  <div class="space-y-1">
-                    <div
-                      v-for="(value, key) in parsedHttp?.headers"
-                      v-show="isImportantHeader(key)"
-                      :key="key"
-                      class="flex items-start gap-2 p-2 border border-surface-700 rounded"
-                    >
-                      <div
-                        class="text-xs text-surface-400 font-mono min-w-24 flex-shrink-0"
-                      >
-                        {{ key }}:
-                      </div>
-                      <div
-                        class="text-xs text-surface-200 font-mono flex-1 break-all"
-                      >
-                        {{ value }}
-                      </div>
-                    </div>
-                    <div
-                      v-if="!hasImportantHeaders"
-                      class="text-center text-surface-500 py-4"
-                    >
-                      <div class="text-sm">
-                        <i class="fas fa-info-circle mb-2"></i>
-                        <div>
-                          No authentication or security headers detected
-                        </div>
-                        <div class="text-xs mt-1 text-surface-600">
-                          Looking for: Authorization, API Keys, Cookies, CSRF
-                          tokens
-                        </div>
+                        {{ endpoint.port }}
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </TabPanel>
-        </TabView>
+          </div>
+        </div>
       </div>
 
       <div
@@ -987,7 +684,7 @@ const saveChanges = () => {
         <div class="flex items-center gap-3 text-surface-400">
           <span class="flex items-center gap-1">
             <i class="fas fa-server"></i>
-            {{ request?.host || "unknown" }}
+            {{ endpoint.host }}
           </span>
           <span v-if="editableQuery" class="flex items-center gap-1">
             <i class="fas fa-code"></i>

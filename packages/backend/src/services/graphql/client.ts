@@ -1,8 +1,8 @@
 import type { SDK } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 import type { GraphQLSchema, Result } from "shared";
+import { INTROSPECTION_QUERY } from "shared";
 
-import { INTROSPECTION_QUERY } from "./introspection";
 import {
   mapHttpStatusToError,
   mergeHeaders,

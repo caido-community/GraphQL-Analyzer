@@ -7,6 +7,8 @@ import { lineNumbers } from "@codemirror/view";
 import { EditorView } from "codemirror";
 import { onMounted, onUnmounted, ref, watch } from "vue";
 
+import { graphqlLanguage } from "./graphqlHighlight";
+
 const props = defineProps<{
   content: string;
   language?: "json" | "javascript" | "graphql";
@@ -26,8 +28,9 @@ const getLanguageExtension = () => {
   switch (props.language) {
     case "json":
       return json();
-    case "javascript":
     case "graphql":
+      return graphqlLanguage;
+    case "javascript":
       return javascript();
     default:
       return javascript();
