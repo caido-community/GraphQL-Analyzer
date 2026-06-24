@@ -127,10 +127,9 @@ describe("extractGraphQLOperation", () => {
 });
 
 describe("parseHttpMessage", () => {
-  it("splits method, headers and body", () => {
+  it("parses the method and body", () => {
     const message = parseHttpMessage(rawRequest("POST", "{ a }"));
     expect(message?.method).toBe("POST");
-    expect(message?.headers["Content-Type"]).toBe("application/json");
     expect(message?.body).toBe("{ a }");
   });
 });

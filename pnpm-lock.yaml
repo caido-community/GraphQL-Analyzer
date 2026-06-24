@@ -97,9 +97,15 @@ importers:
       primevue:
         specifier: 4.1.0
         version: 4.1.0(vue@3.4.37(typescript@5.5.4))
+      ts-http-forge:
+        specifier: 0.1.7
+        version: 0.1.7
       vue:
         specifier: 3.4.37
         version: 3.4.37(typescript@5.5.4)
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
     devDependencies:
       '@caido/sdk-backend':
         specifier: 0.57.0
@@ -1239,6 +1245,9 @@ packages:
   content-type@1.0.5:
     resolution: {integrity: sha512-nTjqfcBFEipKdXCv4YDQWCfmcLZKm81ldF0pAopTvyrFGVbcR6P/VAAd5G7N+0tTr8QqiU0tFadD6FK4NtJwOA==}
     engines: {node: '>= 0.6'}
+
+  cookie-es@2.0.1:
+    resolution: {integrity: sha512-aVf4A4hI2w70LnF7GG+7xDQUkliwiXWXFvTjkip4+b64ygDQ2sJPRSKFDHbxn8o0xu9QzPkMuuiWIXyFSE2slA==}
 
   cookie-signature@1.2.2:
     resolution: {integrity: sha512-D76uU73ulSXrD1UXF4KE2TMxVVwhsnCgfAyTg9k8P6KGZjlXKrOLe4dJQKI3Bxi5wjesZoFXJWElNWBjPZMbhg==}
@@ -2782,6 +2791,9 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
+  ts-http-forge@0.1.7:
+    resolution: {integrity: sha512-jPLYDBOCrx3nG8SJ7qrht7R2RiBrTmU7dhdLBMaky1YiojlSUNo/vHyTYpTSV2bK/l5biKlW1ZTOg/MXMmbGjA==}
+
   ts-interface-checker@0.1.13:
     resolution: {integrity: sha512-Y/arvbn+rrz3JCKl9C4kVNfTfSm2/mEp5FSz5EsZSANGPSlQrpRI5M4PKF+mJnE52jOO90PnPSc3Ur3bTQw0gA==}
 
@@ -4267,6 +4279,8 @@ snapshots:
       safe-buffer: 5.2.1
 
   content-type@1.0.5: {}
+
+  cookie-es@2.0.1: {}
 
   cookie-signature@1.2.2: {}
 
@@ -6019,6 +6033,10 @@ snapshots:
   ts-api-utils@2.1.0(typescript@5.5.4):
     dependencies:
       typescript: 5.5.4
+
+  ts-http-forge@0.1.7:
+    dependencies:
+      cookie-es: 2.0.1
 
   ts-interface-checker@0.1.13: {}
 

@@ -1,6 +1,8 @@
+import { HttpForge } from "ts-http-forge";
+import { z } from "zod";
+
 export type HttpMessage = {
   method: string;
-  headers: Record<string, string>;
   body: string;
 };
 
@@ -14,35 +16,12 @@ export type GraphQLOperation = {
 export const parseHttpMessage = (raw: string): HttpMessage | undefined => {
   if (raw.trim() === "") return undefined;
 
-  let parts = raw.split("\r\n\r\n");
-  if (parts.length < 2) {
-    parts = raw.split("\n\n");
-    if (parts.length < 2) return undefined;
-  }
+  const forge = HttpForge.create(raw);
 
-  const headerSection = parts[0] ?? "";
-  const separator = raw.includes("\r\n") ? "\r\n\r\n" : "\n\n";
-  const body = parts.slice(1).join(separator);
-
-  const eol = headerSection.includes("\r\n") ? "\r\n" : "\n";
-  const lines = headerSection.split(eol);
-  const method = (lines[0] ?? "").match(/^(\w+)\s+/)?.[1] ?? "UNKNOWN";
-
-  const headers: Record<string, string> = {};
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === undefined || line === "") continue;
-    const colonIndex = line.indexOf(":");
-    if (colonIndex > 0) {
-      const name = line.substring(0, colonIndex).trim();
-      const value = line.substring(colonIndex + 1).trim();
-      if (name !== "" && value !== "") {
-        headers[name] = value;
-      }
-    }
-  }
-
-  return { method, headers, body };
+  return {
+    method: forge.getMethod() ?? "UNKNOWN",
+    body: forge.getBody() ?? "",
+  };
 };
 
 const operationPattern = /^\s*(query|mutation|subscription|fragment)\b/i;
@@ -54,51 +33,51 @@ const looksLikeGraphQLQuery = (text: string): boolean => {
   return operationPattern.test(trimmed) || anonymousPattern.test(trimmed);
 };
 
+const graphqlBodySchema = z.object({
+  query: z.string().optional(),
+  variables: z.unknown().optional(),
+  operationName: z.string().optional(),
+  extensions: z
+    .object({
+      persistedQuery: z
+        .object({ sha256Hash: z.string().optional() })
+        .optional(),
+    })
+    .optional(),
+});
+
 export const extractGraphQLOperation = (
   body: string,
 ): GraphQLOperation | undefined => {
   const trimmed = body.trim();
   if (trimmed === "") return undefined;
 
+  let parsed: unknown;
   try {
-    const json = JSON.parse(trimmed) as {
-      query?: unknown;
-      variables?: unknown;
-      operationName?: unknown;
-      extensions?: { persistedQuery?: { sha256Hash?: unknown } };
-    };
-
-    const query = typeof json.query === "string" ? json.query : "";
-    const operationName =
-      typeof json.operationName === "string" ? json.operationName : undefined;
-    const hasOperationName =
-      operationName !== undefined && operationName.trim() !== "";
-    const persistedQuery = json.extensions?.persistedQuery;
-    const persistedQueryHash =
-      typeof persistedQuery?.sha256Hash === "string"
-        ? persistedQuery.sha256Hash
-        : undefined;
-
-    if (
-      query.trim() !== "" ||
-      hasOperationName ||
-      persistedQueryHash !== undefined
-    ) {
-      return {
-        query,
-        variables: json.variables,
-        operationName,
-        persistedQueryHash,
-      };
-    }
-
-    return undefined;
+    parsed = JSON.parse(trimmed);
   } catch {
-    if (looksLikeGraphQLQuery(trimmed)) {
-      return { query: trimmed };
-    }
-    return undefined;
+    return looksLikeGraphQLQuery(trimmed) ? { query: trimmed } : undefined;
   }
+
+  const result = graphqlBodySchema.safeParse(parsed);
+  if (!result.success) return undefined;
+
+  const data = result.data;
+  const persistedQueryHash = data.extensions?.persistedQuery?.sha256Hash;
+  const hasQuery = data.query !== undefined && data.query.trim() !== "";
+  const hasOperationName =
+    data.operationName !== undefined && data.operationName.trim() !== "";
+
+  if (hasQuery || hasOperationName || persistedQueryHash !== undefined) {
+    return {
+      query: data.query ?? "",
+      variables: data.variables,
+      operationName: data.operationName,
+      persistedQueryHash,
+    };
+  }
+
+  return undefined;
 };
 
 export const isGraphQLRequest = (raw: string): boolean => {

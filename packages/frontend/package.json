@@ -16,7 +16,9 @@
     "@vueuse/core": "10.5.0",
     "codemirror": "6.0.1",
     "primevue": "4.1.0",
-    "vue": "3.4.37"
+    "ts-http-forge": "0.1.7",
+    "vue": "3.4.37",
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@caido/sdk-backend": "0.57.0",

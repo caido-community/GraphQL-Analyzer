@@ -10,6 +10,7 @@ import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import SelectButton from "primevue/selectbutton";
 import { INTROSPECTION_QUERY } from "shared";
+import { HttpForge } from "ts-http-forge";
 import { computed, ref, watch } from "vue";
 
 import CodeEditor from "../components/common/CodeEditor.vue";
@@ -370,34 +371,14 @@ const reconstructGraphQLBody = (): string | undefined => {
 };
 
 const reconstructRawHttpRequest = (newBody: string): string | undefined => {
-  const parsed = parsedHttp.value;
-  if (parsed === undefined) return undefined;
+  const raw = getRawData.value;
+  if (raw.trim() === "") return undefined;
 
-  const path = props.draft?.path ?? props.request?.path ?? "/";
-  const query = props.draft?.query ?? props.request?.query ?? "";
-  const target = query !== "" ? `${path}?${query}` : path;
-
-  const headerLines: string[] = [`${parsed.method} ${target} HTTP/1.1`];
-
-  let hasContentType = false;
-  for (const [key, value] of Object.entries(parsed.headers)) {
-    const lowerKey = key.toLowerCase();
-    if (lowerKey === "content-length") {
-      continue;
-    }
-    if (lowerKey === "content-type") {
-      hasContentType = true;
-    }
-    headerLines.push(`${key}: ${value}`);
-  }
-
-  const bodyBytes = new TextEncoder().encode(newBody);
-  headerLines.push(`Content-Length: ${bodyBytes.length}`);
-  if (!hasContentType) {
-    headerLines.push("Content-Type: application/json");
-  }
-
-  return headerLines.join("\r\n") + "\r\n\r\n" + newBody;
+  const length = new TextEncoder().encode(newBody).length;
+  return HttpForge.create(raw)
+    .body(newBody)
+    .setHeader("Content-Length", String(length))
+    .build();
 };
 
 const applyEdit = () => {
