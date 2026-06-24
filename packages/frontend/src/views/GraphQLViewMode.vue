@@ -5,18 +5,22 @@ import {
   type RequestFull,
 } from "@caido/sdk-frontend";
 import { type EditorView } from "@codemirror/view";
-import { watchDebounced } from "@vueuse/core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import SelectButton from "primevue/selectbutton";
 import { INTROSPECTION_QUERY } from "shared";
-import { HttpForge } from "ts-http-forge";
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 
 import CodeEditor from "../components/common/CodeEditor.vue";
 import { createStorageService } from "../services/storage";
 import type { FrontendSDK } from "../types";
-import { extractGraphQLOperation, parseHttpMessage } from "../utils/graphql";
+import {
+  extractGraphQLOperation,
+  parseHttpMessage,
+  replaceHttpBody,
+} from "../utils/graphql";
+
+import { viewModeActiveTab } from "./viewModeState";
 
 const props = defineProps<{
   sdk: API;
@@ -34,7 +38,7 @@ const editableVariables = ref("{}");
 const editableOperationName = ref("");
 const queryValidationErrors = ref<string[]>([]);
 const tabs = ["Query", "Variables", "Request Info"];
-const activeTab = ref("Query");
+const activeTab = viewModeActiveTab;
 
 const lastWrittenRaw = ref("");
 const initialized = ref({ query: "", variables: "{}", operationName: "" });
@@ -178,10 +182,16 @@ const initializeData = () => {
   };
 };
 
+let writeTimer: ReturnType<typeof setTimeout> | undefined;
+
 watch(
   getRawData,
   () => {
     if (getRawData.value === lastWrittenRaw.value) return;
+    if (writeTimer !== undefined) {
+      clearTimeout(writeTimer);
+      writeTimer = undefined;
+    }
     initializeData();
   },
   { immediate: true },
@@ -374,11 +384,7 @@ const reconstructRawHttpRequest = (newBody: string): string | undefined => {
   const raw = getRawData.value;
   if (raw.trim() === "") return undefined;
 
-  const length = new TextEncoder().encode(newBody).length;
-  return HttpForge.create(raw)
-    .body(newBody)
-    .setHeader("Content-Length", String(length))
-    .build();
+  return replaceHttpBody(raw, newBody);
 };
 
 const applyEdit = () => {
@@ -407,13 +413,22 @@ const applyEdit = () => {
   });
 };
 
-watchDebounced(
+const scheduleApplyEdit = () => {
+  if (writeTimer !== undefined) clearTimeout(writeTimer);
+  writeTimer = setTimeout(() => {
+    writeTimer = undefined;
+    applyEdit();
+  }, 400);
+};
+
+watch(
   [editableQuery, editableVariables, editableOperationName],
-  () => applyEdit(),
-  {
-    debounce: 400,
-  },
+  scheduleApplyEdit,
 );
+
+onUnmounted(() => {
+  if (writeTimer !== undefined) clearTimeout(writeTimer);
+});
 
 const addIntrospectionQuery = () => {
   activeTab.value = "Query";
