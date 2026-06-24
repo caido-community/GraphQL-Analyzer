@@ -22,28 +22,6 @@ export async function testGraphQLEndpointFromRequest(
   return graphqlService.testEndpointFromRequest(requestId, customHeaders);
 }
 
-export function generateGraphQLQuery(
-  sdk: SDK,
-  field: {
-    name: string;
-    args?: Array<{ name: string; rawType?: unknown; type?: unknown }>;
-    rawType?: unknown;
-    type?: unknown;
-  },
-  operationType: "query" | "mutation" | "subscription",
-  allTypes: unknown[],
-  maxDepth: number = 5,
-): string {
-  const service = new GraphQLService(sdk);
-  const query = service.generateGraphQLQuery(
-    field as Parameters<typeof service.generateGraphQLQuery>[0],
-    operationType,
-    allTypes as Parameters<typeof service.generateGraphQLQuery>[2],
-    maxDepth,
-  );
-  return query;
-}
-
 export async function executeGraphQLQuery(
   sdk: SDK,
   url: string,
@@ -67,6 +45,7 @@ export async function getRequestInfo(
     path: string;
     url: string;
     method: string;
+    raw: string;
   }>
 > {
   try {
@@ -88,6 +67,7 @@ export async function getRequestInfo(
         path: request.getPath(),
         url: request.getUrl(),
         method: request.getMethod(),
+        raw: request.getRaw().toText(),
       },
     };
   } catch (error) {

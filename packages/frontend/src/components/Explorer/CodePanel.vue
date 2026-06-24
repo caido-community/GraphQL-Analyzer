@@ -6,11 +6,15 @@ import type { ExplorerSession } from "./useSessions";
 
 import { CodeEditor } from "@/components/common";
 import { useSDK } from "@/plugins/sdk";
+import { createReplayService } from "@/services/replay";
+import { replaceHttpBody } from "@/utils/graphql";
 
 const sdk = useSDK();
 
 const props = defineProps<{
   selectedCode: string;
+  selectedQuery?: string;
+  selectedVariables?: Record<string, string>;
   selectedType: string;
   selectedLanguage: "json" | "javascript" | "graphql";
   selectedSession: ExplorerSession | undefined;
@@ -78,6 +82,56 @@ const sendToAttacker = async () => {
 
   emit("sendToAttacker");
 };
+
+const replayRequestId = computed(
+  () =>
+    props.selectedSession?.requestId ??
+    props.selectedSession?.url?.replace("request:", ""),
+);
+
+const canSendToReplay = computed(
+  () =>
+    props.selectedQuery !== undefined &&
+    !isFileImport.value &&
+    replayRequestId.value !== undefined &&
+    replayRequestId.value !== "",
+);
+
+const sendToReplay = async () => {
+  const query = props.selectedQuery;
+  const requestId = replayRequestId.value;
+  if (query === undefined || requestId === undefined || requestId === "") {
+    return;
+  }
+
+  const info = await sdk.backend.getRequestInfo(requestId);
+  if (info.kind === "Error") {
+    sdk.window.showToast(info.error, { variant: "error" });
+    return;
+  }
+
+  const variables = props.selectedVariables;
+  const body =
+    variables !== undefined
+      ? JSON.stringify({ query, variables })
+      : JSON.stringify({ query });
+  const raw = replaceHttpBody(info.value.raw, body);
+
+  const result = await createReplayService(sdk).createReplayFromRequest(
+    raw,
+    info.value.url,
+  );
+  if (result.kind === "Error") {
+    sdk.window.showToast(`Failed to send to Replay: ${result.error}`, {
+      variant: "error",
+    });
+    return;
+  }
+
+  sdk.window.showToast(`Sent to Replay: ${result.value.sessionName}`, {
+    variant: "success",
+  });
+};
 </script>
 
 <template>
@@ -88,6 +142,20 @@ const sendToAttacker = async () => {
           {{ selectedType.replace("-", " ") }}
         </div>
         <div class="flex gap-2">
+          <Button
+            v-tooltip="
+              canSendToReplay
+                ? 'Send to Replay'
+                : 'Select a query or mutation from an introspected endpoint'
+            "
+            icon="fas fa-paper-plane"
+            size="small"
+            text
+            severity="primary"
+            class="text-xs"
+            :disabled="!canSendToReplay"
+            @click="sendToReplay"
+          />
           <Button
             v-tooltip="
               isFileImport

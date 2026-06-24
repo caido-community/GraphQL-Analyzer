@@ -43,6 +43,8 @@ const selectionKeys = ref<Set<string>>(new Set());
 
 const {
   selectedCode,
+  selectedQuery,
+  selectedVariables,
   selectedType,
   selectedLanguage,
   handleNodeSelect,
@@ -52,13 +54,13 @@ const {
 const sdk = useSDK();
 const storageService = createStorageService(sdk);
 
-const onNodeSelect = async (item: TreeItem<unknown>) => {
+const onNodeSelect = (item: TreeItem<unknown>) => {
   selectedKey.value = item.id;
   selectionKeys.value = new Set([item.id]);
 
   const data = item.data as { type: string; content: unknown } | undefined;
   if (data !== undefined) {
-    await handleNodeSelect({
+    handleNodeSelect({
       data: data,
     });
   }
@@ -109,7 +111,7 @@ const loadExplorerState = async () => {
       (i) => i.id === storedSelectedNodeKey,
     );
     if (foundItem) {
-      await handleNodeSelect({
+      handleNodeSelect({
         data: foundItem.data as { type: string; content: unknown },
       });
     }
@@ -227,6 +229,8 @@ onMounted(async () => {
               <SplitterPanel :size="60" :min-size="30">
                 <CodePanel
                   :selected-code="selectedCode"
+                  :selected-query="selectedQuery"
+                  :selected-variables="selectedVariables"
                   :selected-type="selectedType"
                   :selected-language="selectedLanguage"
                   :selected-session="selectedSession"

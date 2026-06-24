@@ -24,6 +24,14 @@ export const parseHttpMessage = (raw: string): HttpMessage | undefined => {
   };
 };
 
+export const replaceHttpBody = (raw: string, body: string): string => {
+  const length = new TextEncoder().encode(body).length;
+  return HttpForge.create(raw)
+    .body(body)
+    .setHeader("Content-Length", String(length))
+    .build();
+};
+
 const operationPattern = /^\s*(query|mutation|subscription|fragment)\b/i;
 const anonymousPattern = /^\{\s*[A-Za-z_]/;
 
