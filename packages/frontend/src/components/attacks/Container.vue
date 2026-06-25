@@ -1377,12 +1377,21 @@ const createFindingFromResult = async (result: AttackResult) => {
 const copyFindingToClipboard = async (
   finding: AttackResult["findings"][number],
 ) => {
+  const evidence =
+    finding.evidence !== undefined && finding.evidence.trim() !== ""
+      ? `\n\nEvidence:\n${finding.evidence}`
+      : "";
+  const recommendation =
+    finding.recommendation !== undefined &&
+    finding.recommendation.trim() !== ""
+      ? `\n\nRecommendation:\n${finding.recommendation}`
+      : "";
   const findingText = `${finding.title}
 
 Severity: ${finding.severity.toUpperCase()}
 
 Description:
-${finding.description}${finding.evidence ? `\n\nEvidence:\n${finding.evidence}` : ""}${finding.recommendation ? `\n\nRecommendation:\n${finding.recommendation}` : ""}`;
+${finding.description}${evidence}${recommendation}`;
 
   await copyToClipboard(findingText);
 };
@@ -2355,6 +2364,7 @@ export default {
                                           icon="fas fa-copy"
                                           size="small"
                                           severity="secondary"
+                                          aria-label="Copy finding to clipboard"
                                           @click="copyFindingToClipboard(finding)"
                                           v-tooltip="'Copy to clipboard'"
                                         />
